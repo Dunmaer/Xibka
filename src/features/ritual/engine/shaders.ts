@@ -116,7 +116,7 @@ void main(){
   float alive = 1.0 - gone;
   float charred = smoothstep(T - 0.14, T, b) * burning;
   float emberBand = exp(-pow((b - T) / 0.022, 2.0)) * burning;
-  vec3 col = tex.rgb * uTint * vShade;
+  vec3 col = tex.rgb / tex.a * uTint * vShade; // texture is premultiplied
   // soft light falloff towards the edges + warm bounce light from the lava below
   col *= 1.0 - 0.28 * smoothstep(0.45, 1.05, edge);
   col *= mix(vec3(1.0), vec3(1.06, 0.9, 0.78), smoothstep(0.1, -0.5, q.y));
@@ -194,6 +194,9 @@ uniform float uSpread;
 uniform float uSwirl;
 uniform float uCamZ;
 uniform float uCamD;
+uniform float uFinalMix;
+uniform float uZTop;
+uniform float uDepth;
 varying vec2 vUv;
 varying float vAlpha;
 varying float vGlyph;
@@ -201,7 +204,9 @@ varying float vBlur;
 void main(){
   float th = aOrbit.w + uTime * aOrbit.z * uSwirl;
   float r = aOrbit.x + aWave.x * sin(th * aWave.y + uTime * 0.7 + aOrbit.w * 3.0);
-  float zc = aExtra.z > 0.5 ? uCamZ - aOrbit.y * uCamD : aOrbit.y * uSpread;
+  // chains: compact around the circle during the ritual, spread down the stack at the end
+  float stacked = uZTop - (1.0 - clamp((aOrbit.y + 0.5) / 6.5, 0.0, 1.0)) * uDepth;
+  float zc = aExtra.z > 0.5 ? uCamZ - aOrbit.y * uCamD : mix(aOrbit.y * uSpread, stacked, uFinalMix);
   float z = zc + aWave.z * sin(th * 2.0 + uTime * 0.9 + aOrbit.w);
   vec3 center = vec3(cos(th) * r, sin(th) * r, z);
   float dir = sign(aOrbit.z);
@@ -281,7 +286,7 @@ ${NOISE}
 void main(){
   vec4 base = texture2D(uBase, vUv);
   if (base.a < 0.005) discard;
-  vec3 col = base.rgb;
+  vec3 col = base.rgb / base.a; // texture is premultiplied
 
   // iridescent fragment of the circle: colour flows with time and the viewing angle (mouse)
   float m = texture2D(uShimmer, vUv).r;
@@ -289,8 +294,8 @@ void main(){
   vec3 iri = mix(uColA, uColB, 0.5 + 0.5 * sin(phase * 3.0));
   iri = mix(iri, uColC, 0.5 + 0.5 * sin(phase * 4.3 + 1.7));
   float sheen = pow(0.5 + 0.5 * sin(phase * 5.0 - uTime * 0.6), 3.0);
-  col = mix(col, col * (0.62 + 0.5 * iri), m * uShimmerAmt);
-  col += iri * m * uShimmerAmt * (0.05 + 0.1 * sheen);
+  col = mix(col, col * (0.45 + 0.65 * iri), m * uShimmerAmt);
+  col += iri * m * uShimmerAmt * (0.07 + 0.14 * sheen);
 
   // seal engraving
   vec2 su = (vUv - uSealRect.xy) / uSealRect.zw;

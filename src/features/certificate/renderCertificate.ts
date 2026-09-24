@@ -480,10 +480,10 @@ export async function renderCertificateLayers(data: CertificateData, scale = 1.5
     tc.drawImage(base, 0, 0);
     f.save();
     f.globalCompositeOperation = 'multiply';
-    f.globalAlpha = 0.28;
+    f.globalAlpha = 0.46;
     f.drawImage(tint, 0, 0);
     f.globalCompositeOperation = 'soft-light';
-    f.globalAlpha = 0.35;
+    f.globalAlpha = 0.5;
     f.drawImage(tint, 0, 0);
     f.restore();
     // the seal sits on top of the tint

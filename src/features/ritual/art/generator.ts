@@ -44,8 +44,14 @@ export interface LayerArt {
   intensity: number;
   spin: number;
   palette: Palette;
-  /** Hangs above the certificate at the end. */
+  /** Hangs just under the certificate at the end (inscription rings framing the sheet). */
   hang: boolean;
+  /**
+   * Separate small circle (satellite / medallion) sitting on an orbit: it is drawn centred on
+   * its own origin, placed at (r, a) and rotated so its top faces outward; `spin` turns it
+   * around its own centre while the whole group turns with `groupSpin`.
+   */
+  orbit?: { r: number; a: number; group: number; groupSpin: number };
   draw: (p: Pen) => void;
 }
 
@@ -541,6 +547,9 @@ export function generateCircle(g: GeneratorInput): CircleDesign {
   const text = (a: number[], b: number[]) => [...a, -1, ...b];
   const layers: LayerArt[] = [];
   const dir = rng.sign();
+  // Every draw function takes its randomness from a fresh fork, so drawing a layer twice
+  // (3D texture, certificate watermark, gallery) always gives exactly the same picture.
+  const fresh = (salt: number) => () => rng.fork(salt);
 
   // Architecture: where the depth goes (a cone towards the viewer, a bowl, or a scattered mechanism)
   const arch = rng.pick(['cone', 'bowl', 'scatter', 'cone'] as const);
@@ -551,18 +560,18 @@ export function generateCircle(g: GeneratorInput): CircleDesign {
     return rng.range(0, 5);
   };
   let order = 0;
-  const addLayer = (id: string, radius: number, intensity: number, draw: (p: Pen) => void, extra: Partial<LayerArt> = {}) => {
+  const addLayer = (id: string, radius: number, intensity: number, draw: (p: Pen) => void, extra: Partial<LayerArt> = {}, depthRadius = radius) => {
     const lr = rng.fork(900 + order);
     const i = order++;
     layers.push({
       id,
       radius,
-      zSlot: slotFor(radius),
+      zSlot: slotFor(depthRadius),
       zStart: -lr.range(7, 28),
       arrive: Math.round(lr.range(214, 241)),
       spiral: lr.range(0, 0.7),
       twist: lr.range(2, 7) * lr.sign(),
-      reveal: [175 + i * 3 + lr.int(0, 6), 196 + i * 3 + lr.int(0, 8)],
+      reveal: [175 + Math.min(i, 14) * 2 + lr.int(0, 6), 196 + Math.min(i, 14) * 2 + lr.int(0, 8)],
       intensity,
       spin: lr.range(0.03, 0.28) * (i % 2 ? -dir : dir),
       palette: layerPalette(palette, lr),
@@ -572,29 +581,54 @@ export function generateCircle(g: GeneratorInput): CircleDesign {
     });
   };
 
-  // ---------- 1. Frame (+ what breaks out of it)
+  /** A group of small circles on an orbit, each its own layer (so each can spin by itself). */
+  const addOrbitGroup = (
+    id: string, group: number, orbitR: number, size: number, angles: number[], intensity: number,
+    drawOne: (p: Pen, i: number) => void,
+  ) => {
+    const gr = rng.fork(3000 + group);
+    const groupSpin = gr.range(0.02, 0.09) * gr.sign();
+    const baseSlot = slotFor(orbitR);
+    angles.forEach((a, i) => {
+      const sr = gr.fork(i);
+      // some spin briskly on their own axis, the others barely move
+      const spin = (sr.chance(0.55) ? sr.range(0.35, 0.9) : sr.range(0.03, 0.12)) * sr.sign();
+      addLayer(`${id}${i}`, size * 1.04, intensity, (p) => drawOne(p, i), {
+        orbit: { r: orbitR, a, group, groupSpin },
+        spin,
+        zSlot: baseSlot + sr.range(-0.6, 0.6),
+      });
+    });
+  };
+
+  // ---------- 1. Frame: rings, the letter band and what breaks out of it (three depths)
   {
     const fr = rng.fork(11);
     const style = fr.int(0, 3);
     const bandH = fr.range(0.06, 0.13);
     const bigLetters = fr.chance(0.4);
-    const outerExtras = {
-      blades: fr.chance(0.35),
-      ticks: fr.chance(0.4),
-      arcs: fr.chance(0.55),
-    };
-    const reach = outerExtras.blades ? 1.5 : outerExtras.arcs || outerExtras.ticks ? 1.22 : 1.04;
-    addLayer('frame', reach, 0.9, (p) => {
+    const blades = fr.chance(0.35);
+    const ticks = fr.chance(0.4);
+    const arcs = fr.chance(0.55);
+    const r1 = 0.965;
+    const r0 = r1 - bandH;
+    const d = fresh(12);
+    addLayer('frame', 1.04, 0.9, (p) => {
+      const r = d();
       p.ink('a');
       circle(p, 1, style === 0 ? 2.2 : 1.6);
       if (style !== 1) circle(p, 0.985, 0.6, 0.8);
-      if (style === 2) dashedCircle(p, 1.02, fr.int(40, 90), 0.5, 0.7, 0.7);
-      const r1 = 0.965;
-      const r0 = r1 - bandH;
+      if (style === 2) dashedCircle(p, 1.02, r.int(40, 90), 0.5, 0.7, 0.7);
+      circle(p, r0, 1.2);
+      if (r.chance(0.6)) circle(p, r0 - 0.012, 0.5, 0.7);
+    });
+    const dt = fresh(13);
+    addLayer('frameText', r1 + 0.02, 0.9, (p) => {
+      const r = dt();
       p.ink('b');
       if (bigLetters) {
         // few, big letters with separators (like the old grimoires)
-        const n = fr.pick([6, 8, 10, 12]);
+        const n = r.pick([6, 8, 10, 12]);
         const seq = text(g.name, g.punishment).filter((x) => x >= 0);
         around(p, n, (r0 + r1) / 2, (i) => {
           p.ctx.globalAlpha = 1;
@@ -607,59 +641,63 @@ export function generateCircle(g: GeneratorInput): CircleDesign {
           const [x2, y2] = polar(r1, t);
           line(p, x1, y1, x2, y2, 0.8, 0.8);
         }
-      } else glyphRing(p, (r0 + r1) / 2, bandH, text(g.name, g.reason), { sep: fr.pick(['dot', 'diamond', 'bar'] as const) });
-      p.ink('a');
-      circle(p, r0, 1.2);
-      if (fr.chance(0.6)) circle(p, r0 - 0.012, 0.5, 0.7);
-      if (outerExtras.blades) {
-        // sword-like blades radiating outwards
-        p.ink('c');
-        const n = fr.pick([8, 12, 16, 24]);
-        const len = fr.range(0.25, 0.45);
-        around(p, n, 1.04, (i) => {
-          const l = len * (i % 2 ? 0.65 : 1);
-          const { ctx } = p;
-          ctx.globalAlpha = 0.95;
-          ctx.beginPath();
-          ctx.moveTo(-0.012, 0);
-          ctx.lineTo(0, -l);
-          ctx.lineTo(0.012, 0);
-          ctx.closePath();
-          ctx.fill();
-          line(p, -0.035, -0.02, 0.035, -0.02, 1, 0.9);
-          dot(p, 0, 0.012, 0.008, 1);
-        }, fr.range(0, TAU));
-      }
-      if (outerExtras.ticks) {
-        p.ink('a');
-        const groups = fr.pick([4, 6, 8, 12]);
-        for (let gi = 0; gi < groups; gi++) {
-          const base = (gi / groups) * TAU;
-          for (let k = -3; k <= 3; k++) {
-            const t = base + k * 0.018;
-            const [x1, y1] = polar(1.09, t);
-            const [x2, y2] = polar(k === 0 ? 1.18 : 1.13, t);
-            line(p, x1, y1, x2, y2, 0.8, 0.8);
+      } else glyphRing(p, (r0 + r1) / 2, bandH, text(g.name, g.reason), { sep: r.pick(['dot', 'diamond', 'bar'] as const) });
+    }, {}, 0.93);
+    if (blades || ticks || arcs) {
+      const reach = blades ? 1.5 : 1.22;
+      const de = fresh(14);
+      addLayer('frameOuter', reach, 0.85, (p) => {
+        const r = de();
+        if (blades) {
+          // sword-like blades radiating outwards
+          p.ink('c');
+          const n = r.pick([8, 12, 16, 24]);
+          const len = r.range(0.25, 0.45);
+          around(p, n, 1.04, (i) => {
+            const l = len * (i % 2 ? 0.65 : 1);
+            const { ctx } = p;
+            ctx.globalAlpha = 0.95;
+            ctx.beginPath();
+            ctx.moveTo(-0.012, 0);
+            ctx.lineTo(0, -l);
+            ctx.lineTo(0.012, 0);
+            ctx.closePath();
+            ctx.fill();
+            line(p, -0.035, -0.02, 0.035, -0.02, 1, 0.9);
+            dot(p, 0, 0.012, 0.008, 1);
+          }, r.range(0, TAU));
+        }
+        if (ticks) {
+          p.ink('a');
+          const groups = r.pick([4, 6, 8, 12]);
+          for (let gi = 0; gi < groups; gi++) {
+            const base = (gi / groups) * TAU;
+            for (let k = -3; k <= 3; k++) {
+              const t = base + k * 0.018;
+              const [x1, y1] = polar(1.09, t);
+              const [x2, y2] = polar(k === 0 ? 1.18 : 1.13, t);
+              line(p, x1, y1, x2, y2, 0.8, 0.8);
+            }
           }
         }
-      }
-      if (outerExtras.arcs) {
-        p.ink('c');
-        const segs = fr.int(3, 9);
-        for (let i = 0; i < segs; i++) {
-          const t = fr.range(0, TAU);
-          const l = fr.range(0.3, 1.2);
-          const r = fr.range(1.06, 1.2);
-          arc(p, r, t, t + l, fr.range(0.6, 1.2), 0.85);
-          const [x, y] = polar(r, t + l);
-          dot(p, x, y, 0.012, 1);
+        if (arcs) {
+          p.ink('c');
+          const segs = r.int(3, 9);
+          for (let i = 0; i < segs; i++) {
+            const t = r.range(0, TAU);
+            const l = r.range(0.3, 1.2);
+            const rr = r.range(1.06, 1.2);
+            arc(p, rr, t, t + l, r.range(0.6, 1.2), 0.85);
+            const [x, y] = polar(rr, t + l);
+            dot(p, x, y, 0.012, 1);
+          }
         }
-      }
-    });
+      }, {}, 1.2);
+    }
   }
 
-  // ---------- 2. Satellites (often breaking out of the frame)
-  if (rng.chance(0.78)) {
+  // ---------- 2. Satellites (often breaking out of the frame), each spinning on its own
+  if (rng.chance(0.8)) {
     const sr = rng.fork(22);
     const k = sr.pick([2, 3, 3, 4, 4, 5, 6, 7, 8]);
     const orbit = sr.range(0.78, 1.12);
@@ -667,20 +705,13 @@ export function generateCircle(g: GeneratorInput): CircleDesign {
     const irregular = sr.chance(0.2);
     const phase = sr.range(0, TAU);
     const angles = Array.from({ length: k }, (_, i) => phase + (i / k) * TAU + (irregular ? sr.range(-0.3, 0.3) : 0));
-    const detail = 1;
-    addLayer('satellites', orbit + size + 0.02, 0.85, (p) => {
-      if (sr.chance(0.5)) {
+    if (sr.chance(0.5)) {
+      addLayer('satOrbit', orbit + 0.02, 0.6, (p) => {
         p.ink('a');
         circle(p, orbit, 0.5, 0.5);
-      }
-      angles.forEach((a, i) => {
-        p.ctx.save();
-        p.ctx.translate(Math.cos(a) * orbit, Math.sin(a) * orbit);
-        p.ctx.rotate(a + Math.PI / 2);
-        miniCircle(p, size, sr.fork(i), g, sigils[1 + (i % 4)], detail);
-        p.ctx.restore();
       });
-    });
+    }
+    addOrbitGroup('sat', 1, orbit, size, angles, 0.9, (p, i) => miniCircle(p, size, sr.fork(i), g, sigils[1 + (i % 4)], 1));
   }
 
   // ---------- 3. Main figure — varied architecture
@@ -694,13 +725,15 @@ export function generateCircle(g: GeneratorInput): CircleDesign {
     const k = Math.max(2, Math.min(Math.floor((n - 1) / 2), fr.int(2, 4)));
     const vertexDecor = fr.pick(['none', 'dots', 'rings', 'medallions', 'medallions', 'spokes'] as const);
     figure = `${kind}-${n}`;
+    const df = fresh(34);
     addLayer('figure', R * 1.12, 1, (p) => {
+      const r = df();
       p.ink('a');
       const pts = polygonPts(n, R, rot);
       switch (kind) {
         case 'star':
           for (const loop of starPoly(n, k, R, rot)) strokePoly(p, loop, 1.4, 1);
-          if (fr.chance(0.5)) {
+          if (r.chance(0.5)) {
             p.ctx.save();
             p.ctx.scale(0.95, 0.95);
             for (const loop of starPoly(n, k, R, rot)) strokePoly(p, loop, 0.6 / 0.95, 0.45);
@@ -710,23 +743,23 @@ export function generateCircle(g: GeneratorInput): CircleDesign {
         case 'triangle':
         case 'polygon':
           strokePoly(p, pts, 1.6, 1);
-          if (fr.chance(0.6)) strokePoly(p, polygonPts(n, R * Math.cos(Math.PI / n), rot + Math.PI / n), 0.8, 0.7);
+          if (r.chance(0.6)) strokePoly(p, polygonPts(n, R * Math.cos(Math.PI / n), rot + Math.PI / n), 0.8, 0.7);
           break;
         case 'compound': {
-          const copies = fr.int(2, 4);
+          const copies = r.int(2, 4);
           for (let c = 0; c < copies; c++) strokePoly(p, polygonPts(n, R, rot + (c / copies) * (TAU / n)), 1.2, 1 - c * 0.12);
           break;
         }
         case 'rounded':
-          curvedPoly(p, n, R, rot, fr.range(0.08, 0.3), 1.5, 1);
-          curvedPoly(p, n, R * 0.9, rot + Math.PI / n, fr.range(0.05, 0.2), 0.7, 0.6);
+          curvedPoly(p, n, R, rot, r.range(0.08, 0.3), 1.5, 1);
+          curvedPoly(p, n, R * 0.9, rot + Math.PI / n, r.range(0.05, 0.2), 0.7, 0.6);
           break;
         case 'concave':
-          curvedPoly(p, n, R, rot, -fr.range(0.15, 0.45), 1.5, 1);
+          curvedPoly(p, n, R, rot, -r.range(0.15, 0.45), 1.5, 1);
           break;
         case 'glyphEdges': {
           // letters running along the edges of the figure (two parallel rails)
-          const loops = n >= 5 && fr.chance(0.6) ? starPoly(n, k, R, rot) : [pts];
+          const loops = n >= 5 && r.chance(0.6) ? starPoly(n, k, R, rot) : [pts];
           for (const loop of loops) {
             for (let i = 0; i < loop.length; i++) {
               const [x1, y1] = loop[i];
@@ -746,7 +779,7 @@ export function generateCircle(g: GeneratorInput): CircleDesign {
           break;
         }
         case 'nested': {
-          const depth = fr.int(3, 5);
+          const depth = r.int(3, 5);
           for (let d = 0; d < depth; d++) {
             const rr = R * Math.pow(Math.cos(Math.PI / n), d);
             strokePoly(p, polygonPts(n, rr, rot + (d * Math.PI) / n), 1.3 - d * 0.15, 1 - d * 0.12);
@@ -754,10 +787,9 @@ export function generateCircle(g: GeneratorInput): CircleDesign {
           break;
         }
       }
-      if (fr.chance(0.55)) circle(p, R, 0.8, 0.8);
-      if (fr.chance(0.4)) circle(p, R * Math.cos(Math.PI / n) * 0.98, 0.6, 0.6);
-      // vertex decorations
-      pts.forEach(([x, y], i) => {
+      if (r.chance(0.55)) circle(p, R, 0.8, 0.8);
+      if (r.chance(0.4)) circle(p, R * Math.cos(Math.PI / n) * 0.98, 0.6, 0.6);
+      pts.forEach(([x, y]) => {
         p.ctx.save();
         p.ctx.translate(x, y);
         if (vertexDecor === 'dots') {
@@ -768,9 +800,6 @@ export function generateCircle(g: GeneratorInput): CircleDesign {
           p.ink('c');
           circle(p, 0.035, 1);
           dot(p, 0, 0, 0.01, 1);
-        } else if (vertexDecor === 'medallions') {
-          p.ctx.rotate(Math.atan2(y, x) + Math.PI / 2);
-          miniCircle(p, fr.range(0.06, 0.1), fr.fork(i), g, sigils[5 + (i % 3)], 0);
         }
         p.ctx.restore();
         if (vertexDecor === 'spokes') {
@@ -779,6 +808,12 @@ export function generateCircle(g: GeneratorInput): CircleDesign {
         }
       });
     });
+    if (vertexDecor === 'medallions') {
+      // medallions on the vertices: separate little circles that spin by themselves
+      const size = fr.range(0.06, 0.1);
+      const angles = Array.from({ length: n }, (_, i) => rot + (i / n) * TAU);
+      addOrbitGroup('vtx', 3, R, size, angles, 1, (p, i) => miniCircle(p, size, fr.fork(i), g, sigils[5 + (i % 3)], 0));
+    }
   }
 
   // ---------- 4. Bands (1..3), each with a freshly grown ornament
@@ -791,8 +826,9 @@ export function generateCircle(g: GeneratorInput): CircleDesign {
       const r1 = top;
       const r0 = r1 - h;
       const kind = br();
-      const lrng = br.fork(b);
+      const db = fresh(4400 + b);
       addLayer(`band${b}`, r1 + 0.02, 0.85, (p) => {
+        const lrng = db();
         if (kind < 0.35) {
           p.ink('b');
           glyphRing(p, (r0 + r1) / 2, h, text(words[(b + 2) % 3], words[b % 3]), { sep: lrng.pick(['dot', 'diamond', 'bar', 'none'] as const) });
@@ -813,24 +849,18 @@ export function generateCircle(g: GeneratorInput): CircleDesign {
   }
 
   // ---------- 5. Cardinal medallions (sit on a middle ring, overlapping it)
-  if (rng.chance(0.45)) {
+  if (rng.chance(0.5)) {
     const mr = rng.fork(55);
     const k = mr.pick([3, 4, 4, 5, 6]);
     const orbit = mr.range(0.34, 0.5);
     const size = mr.range(0.1, 0.16);
     const phase = -Math.PI / 2 + (mr.chance(0.5) ? Math.PI / k : 0);
-    addLayer('medallions', orbit + size + 0.02, 0.9, (p) => {
+    addLayer('medRing', orbit + 0.02, 0.85, (p) => {
       p.ink('a');
       circle(p, orbit, 1.2, 0.9);
-      for (let i = 0; i < k; i++) {
-        const a = phase + (i / k) * TAU;
-        p.ctx.save();
-        p.ctx.translate(Math.cos(a) * orbit, Math.sin(a) * orbit);
-        p.ctx.rotate(a + Math.PI / 2);
-        miniCircle(p, size, mr.fork(i), g, sigils[(i % 3) + 6], 1);
-        p.ctx.restore();
-      }
     });
+    const angles = Array.from({ length: k }, (_, i) => phase + (i / k) * TAU);
+    addOrbitGroup('med', 2, orbit, size, angles, 0.95, (p, i) => miniCircle(p, size, mr.fork(i), g, sigils[(i % 3) + 6], 1));
   }
 
   // ---------- 6. Mechanism: gear, lattice or string art
@@ -838,26 +868,28 @@ export function generateCircle(g: GeneratorInput): CircleDesign {
     const gr = rng.fork(66);
     const kind = gr.pick(['gear', 'lattice', 'chords', 'seed'] as const);
     const R = gr.range(0.28, 0.46);
+    const dm = fresh(67);
     addLayer('mechanism', R + 0.04, 0.7, (p) => {
-      p.ink(gr.chance(0.5) ? 'a' : 'c');
+      const r = dm();
+      p.ink(r.chance(0.5) ? 'a' : 'c');
       if (kind === 'gear') {
-        const teeth = gr.int(24, 64);
+        const teeth = r.int(24, 64);
         const { ctx } = p;
         ctx.lineWidth = p.lw;
         ctx.globalAlpha = 0.95;
         ctx.beginPath();
         for (let i = 0; i < teeth; i++) {
           const a0 = (i / teeth) * TAU;
-          const s = [[R * 0.93, a0], [R, a0 + 0.2 * TAU / teeth], [R, a0 + 0.5 * TAU / teeth], [R * 0.93, a0 + 0.7 * TAU / teeth]] as const;
-          s.forEach(([r, a], j) => {
-            const [x, y] = polar(r, a);
+          const s = [[R * 0.93, a0], [R, a0 + (0.2 * TAU) / teeth], [R, a0 + (0.5 * TAU) / teeth], [R * 0.93, a0 + (0.7 * TAU) / teeth]] as const;
+          s.forEach(([rr, a], j) => {
+            const [x, y] = polar(rr, a);
             if (i === 0 && j === 0) ctx.moveTo(x, y);
             else ctx.lineTo(x, y);
           });
         }
         ctx.closePath();
         ctx.stroke();
-        const sp = gr.int(3, 8);
+        const sp = r.int(3, 8);
         for (let i = 0; i < sp; i++) {
           const t = (i / sp) * TAU;
           const [x1, y1] = polar(R * 0.25, t);
@@ -867,19 +899,19 @@ export function generateCircle(g: GeneratorInput): CircleDesign {
         circle(p, R * 0.88, 0.8);
         circle(p, R * 0.25, 1);
       } else if (kind === 'lattice') {
-        const n = gr.int(6, 12);
+        const n = r.int(6, 12);
         const rr = R * 0.5;
         circle(p, rr, 0.8, 0.8);
         around(p, n, rr, () => circle(p, rr, 0.6, 0.6));
       } else if (kind === 'chords') {
-        const n = gr.int(9, 19);
-        const k = Math.max(2, Math.floor(n / gr.range(2.1, 3.5)));
+        const n = r.int(9, 19);
+        const k = Math.max(2, Math.floor(n / r.range(2.1, 3.5)));
         const pts = polygonPts(n, R, -Math.PI / 2);
         for (let i = 0; i < n; i++) line(p, pts[i][0], pts[i][1], pts[(i + k) % n][0], pts[(i + k) % n][1], 0.7, 0.75);
         p.ink('c');
         pts.forEach(([x, y]) => dot(p, x, y, 0.009, 1));
       } else {
-        const n = gr.pick([6, 8, 12]);
+        const n = r.pick([6, 8, 12]);
         const rr = R * 0.5;
         for (let i = 0; i < n; i++) {
           const a = (i / n) * TAU;
@@ -899,25 +931,27 @@ export function generateCircle(g: GeneratorInput): CircleDesign {
     const R = cr.range(0.13, 0.26);
     const kind = cr.pick(['sigil', 'sigil', 'spiral', 'letter', 'eye'] as const);
     const thick = cr.chance(0.4);
+    const dc = fresh(78);
     addLayer('core', R + 0.03, 1.1, (p) => {
+      const r = dc();
       disc(p, R);
       p.ink('a');
       if (thick) {
-        // a solid glowing annulus, like the heart of the seal
+        // a glowing annulus, like the heart of the seal
         p.ctx.globalAlpha = 0.42;
         p.ctx.beginPath();
         p.ctx.arc(0, 0, R, 0, TAU);
         p.ctx.arc(0, 0, R * 0.86, 0, TAU, true);
         p.ctx.fill('evenodd');
         p.erase();
-        dashedCircle(p, R * 0.91, cr.int(8, 20), 0.12, 1.4, 1);
+        dashedCircle(p, R * 0.93, r.int(8, 20), 0.12, 1.4, 1);
         p.ink('a');
       } else {
         circle(p, R, 1.4);
         circle(p, R * 0.92, 0.6, 0.7);
       }
       const inner = R * (thick ? 0.78 : 0.88);
-      if (cr.chance(0.55)) {
+      if (r.chance(0.55)) {
         p.ink('b');
         glyphRing(p, inner - R * 0.08, R * 0.14, g.name, { sep: 'dot' });
         p.ink('a');
@@ -930,7 +964,7 @@ export function generateCircle(g: GeneratorInput): CircleDesign {
         drawSigil(p.ctx, sigils[0], e, 1.2);
       } else if (kind === 'spiral') {
         p.ink('c');
-        const arms = cr.int(3, 6);
+        const arms = r.int(3, 6);
         for (let a = 0; a < arms; a++) {
           p.ctx.lineWidth = p.lw * 1.3;
           p.ctx.beginPath();
@@ -963,10 +997,11 @@ export function generateCircle(g: GeneratorInput): CircleDesign {
   if (rng.chance(0.55)) {
     const hr = rng.fork(88);
     const n = hr.pick([3, 4, 6]);
+    const rot = hr.range(0, TAU);
+    const spokes = hr.pick([4, 6, 8]);
     addLayer('ghost', 1.05, 0.35, (p) => {
       p.ink('a');
-      for (const loop of starPoly(n * 2, 2, 1, hr.range(0, TAU))) strokePoly(p, loop, 0.6, 0.5);
-      const spokes = hr.pick([4, 6, 8]);
+      for (const loop of starPoly(n * 2, 2, 1, rot)) strokePoly(p, loop, 0.6, 0.5);
       for (let i = 0; i < spokes; i++) {
         const [x, y] = polar(1, (i / spokes) * TAU);
         line(p, 0, 0, x, y, 0.4, 0.35);
@@ -974,34 +1009,36 @@ export function generateCircle(g: GeneratorInput): CircleDesign {
     }, { zSlot: -0.6 });
   }
 
-  // ---------- 9. Hanging inscriptions: float above the certificate at the end
+  // ---------- 9. Hanging inscriptions: rings framing the certificate at the end
   {
     const hr = rng.fork(99);
     const count = hr.int(1, 2);
     for (let i = 0; i < count; i++) {
-      // radius chosen so that, lifted above the certificate, it frames the sheet
+      // radius chosen so that, lifted up to the certificate, it frames the sheet
       const R = 0.66 + i * 0.1 + hr.range(0, 0.05);
       const h = hr.range(0.04, 0.06);
+      const dashes = hr.chance(0.6) ? [hr.int(20, 60), hr.int(20, 60)] : null;
       addLayer(`hang${i}`, R + h, 0.55, (p) => {
         p.ink('b');
         glyphRing(p, R, h, text(words[(i + 1) % 3], words[i % 3]), { sep: 'diamond' });
         p.ink('a');
-        if (hr.chance(0.6)) {
-          dashedCircle(p, R + h * 0.75, hr.int(20, 60), 0.5, 0.6, 0.8);
-          dashedCircle(p, R - h * 0.75, hr.int(20, 60), 0.5, 0.6, 0.8);
+        if (dashes) {
+          dashedCircle(p, R + h * 0.75, dashes[0], 0.5, 0.6, 0.8);
+          dashedCircle(p, R - h * 0.75, dashes[1], 0.5, 0.6, 0.8);
         }
       }, { hang: true, zSlot: 2 + i });
     }
   }
 
-  // ---------- tunnel passers: rings, sigils and inscriptions that fly past the camera
+  // ---------- tunnel pieces: rings, sigils and inscriptions (the flight + the tunnel below)
   const passers: PasserArt[] = [];
   for (let i = 0; i < 6; i++) {
-    const pr = rng.fork(500 + i);
     const kind = i % 6;
+    const dp = fresh(500 + i);
     passers.push({
       radius: 1.08,
       draw: (p) => {
+        const pr = dp();
         if (kind === 0) {
           p.ink('b');
           glyphRing(p, 0.93, 0.1, words[i % 3], { sep: 'dot' });

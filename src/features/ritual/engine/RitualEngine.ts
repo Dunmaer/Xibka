@@ -94,6 +94,14 @@ const D_FINAL = 2.4;
 /** Height of the certificate above the altar plane at the end. */
 const ZC = 0.8;
 const SPREAD_K = 0.085; // layer slot spacing during the ritual, as a fraction of camera height
+/** Lock plane during the ritual (top of the assembled circle), as a fraction of camera height. */
+const LOCK_K = 0.42;
+/**
+ * How deep the finished circle's layers are stacked under the certificate. Each layer is
+ * scaled up by exactly as much as perspective shrinks it, so at rest the circle looks like
+ * one flat drawing — the depth only shows (strongly) when the camera moves with the mouse.
+ */
+const FINAL_DEPTH = 3.2;
 
 // Paper phase timings (seconds)
 const P_APPEAR = 0.7;
@@ -148,6 +156,9 @@ export class RitualEngine {
   private paperSpin = 0;
   private paperAspect = 1.43;
   private maxSlot = 5;
+  private minSlot = 0;
+  /** Orbit groups (satellites, medallions): shared slow rotation. */
+  private groups = new Map<number, { angle: number; spin: number }>();
   /** Deferred texture work (drawn a little per frame). */
   private jobs: (() => void)[] = [];
   private blank: THREE.DataTexture;
@@ -332,7 +343,13 @@ export class RitualEngine {
       this.construct.add(mesh);
       this.layers.push({ art, tex, mesh, mat, angle: (i * 0.7) % (Math.PI * 2), lockT: 99 });
     });
-    this.maxSlot = Math.max(1, ...design.layers.filter((l) => !l.hang).map((l) => l.zSlot));
+    const slots = design.layers.filter((l) => !l.hang).map((l) => l.zSlot);
+    this.maxSlot = Math.max(1, ...slots);
+    this.minSlot = Math.min(this.maxSlot - 0.5, ...slots);
+    this.groups.clear();
+    for (const l of design.layers) {
+      if (l.orbit && !this.groups.has(l.orbit.group)) this.groups.set(l.orbit.group, { angle: 0, spin: l.orbit.groupSpin });
+    }
     this.construct.visible = false;
 
     // tunnel passers share a few textures (also drawn lazily)
@@ -391,6 +408,7 @@ export class RitualEngine {
     const map = new THREE.CanvasTexture(paper.paper);
     map.colorSpace = THREE.NoColorSpace;
     map.anisotropy = 8;
+    map.premultiplyAlpha = true;
     const runes = new THREE.CanvasTexture(paper.runes);
     runes.colorSpace = THREE.NoColorSpace;
     this.paperMat.uniforms.uMap.value = map;
@@ -443,7 +461,10 @@ export class RitualEngine {
     mc.fillStyle = '#000';
     mc.fillRect(0, 0, mask.width, mask.height);
     mc.drawImage(data.sealMask, 0, 0);
-    const textures = [tex(data.base), tex(data.sealed), tex(mask, false), tex(data.shimmer)];
+    const baseTex = tex(data.base);
+    // premultiplied: the transparent, torn edges filter cleanly (no dark fringe)
+    baseTex.premultiplyAlpha = true;
+    const textures = [baseTex, tex(data.sealed), tex(mask, false), tex(data.shimmer)];
     const mat = new THREE.ShaderMaterial({
       vertexShader: BASIC_VERT,
       fragmentShader: CERT_FRAG,
@@ -505,6 +526,7 @@ export class RitualEngine {
       drop(t.glow);
     }
     this.passerTextures = [];
+
     (this.paperMat.uniforms.uMap.value as THREE.Texture | null)?.dispose();
     (this.paperMat.uniforms.uRuneMap.value as THREE.Texture | null)?.dispose();
     if (this.swarm) {
@@ -623,11 +645,25 @@ export class RitualEngine {
     return this.lastF < at && f >= at && f > this.silentUntil;
   }
 
-  /** Final framing: pixels per world unit on the certificate plane. */
+  /** On-screen radius (px) of the circle's outer frame at the end. */
+  private frameRadiusPx(W: number, H: number) {
+    return Math.min(W, H) * (H > W ? 0.78 : 0.54);
+  }
+
+  /** Where a layer rests at the end: a deep stack under the certificate, rings just below it. */
+  private finalZ(a: LayerArt, hangIdx: number) {
+    if (a.hang) return ZC - 0.05 - hangIdx * 0.07;
+    const u = clamp01((a.zSlot - this.minSlot) / Math.max(0.01, this.maxSlot - this.minSlot));
+    return ZC - 0.2 - (1 - u) * FINAL_DEPTH;
+  }
+
+  /**
+   * Final framing: pixels per world unit on the certificate plane. Thanks to the depth
+   * compensation every layer keeps its designed size, so the frame (radius 1) simply gets
+   * the target radius on screen.
+   */
   private finalPpu(W: number, H: number) {
-    // the altar-plane circle should reach well beyond the certificate
-    const frame = Math.min(W, H) * (H > W ? 0.72 : 0.6);
-    return frame / (D_FINAL / (D_FINAL + ZC));
+    return this.frameRadiusPx(W, H);
   }
 
   /** Runs deferred texture work within a small time budget per frame. */
@@ -655,12 +691,16 @@ export class RitualEngine {
     if (this.frozenFrame !== null && this.phase === 'ritual') F = this.frozenFrame;
     if (F >= 0) this.events.onFrame?.(F);
 
-    // ---------- pointer
-    this.mouseS.lerp(this.mouse, 1 - Math.exp(-dt * 3));
+    // ---------- pointer (a little eager, so the scene follows the hand)
+    this.mouseS.lerp(this.mouse, 1 - Math.exp(-dt * 5));
     const mx = this.mouseS.x;
     const my = this.mouseS.y;
 
-    // ---------- framing: locked to the altar of the video, then onto the certificate
+    // ---------- framing
+    // The camera looks straight down. One plane is glued to the screen (the "lock plane"):
+    // during the ritual it is the top of the circle, at the end the certificate. Everything
+    // below it — circle layers, the altar video, the tunnel — slides the same way when the
+    // camera moves, and the deeper it is the more it slides: a well / tunnel.
     const zoom = F >= 0 ? videoZoom(F) : 1;
     const dive = F >= 0 ? diveProgress(F) : 0;
     const vc: [number, number] = [
@@ -675,30 +715,40 @@ export class RitualEngine {
     const portrait = H > W;
     const fc = this.finalCenter ?? { x: W / 2, y: H * (portrait ? 0.42 : 0.5), w: 0, h: 0 };
     const ppuF = this.finalPpu(W, H);
-    // background drifts a little with the pointer (screen-space parallax)
-    const par = 14 * (1 - pull * 0.5);
-    this.cam.ppu = Math.exp(lerp(Math.log(ppuVideo), Math.log(ppuF), pull));
-    this.cam.centerX = lerp(vcx, fc.x, pull) + mx * par;
-    this.cam.centerY = lerp(vcy, fc.y, pull) + my * par;
-    this.cam.distance = lerp(dVideo, D_FINAL, pull);
-    this.cam.lockZ = ZC * pull;
-    this.post.composite.uniforms.uParallax.value.set((-mx * par) / W, (my * par) / H);
+    const D = lerp(dVideo, D_FINAL, pull);
+    const lockRitual = LOCK_K * D;
+    const lockZ = lerp(lockRitual, ZC, pull);
+    // the altar plane must keep matching the video: its scale relative to the lock plane
+    const sAltarRitual = D / (D + lockRitual);
+    const ppuL = Math.exp(lerp(Math.log(ppuVideo / sAltarRitual), Math.log(ppuF), pull));
+    this.cam.ppu = ppuL;
+    this.cam.distance = D;
+    this.cam.lockZ = lockZ;
+    this.cam.centerX = lerp(vcx, fc.x, pull);
+    this.cam.centerY = lerp(vcy, fc.y, pull);
 
-    // ---------- depth spread of the assembled circle
-    const spreadRitual = SPREAD_K * this.cam.distance;
-    const spreadFinal = (ZC - 0.12) / this.maxSlot;
-    let spread = spreadRitual;
-    if (F >= K.assembled - 6) {
-      const tighten = 1 - 0.7 * smooth(K.assembled - 6, K.assembled, F);
-      const reopen = easeOutCubic((F - K.assembled) / 30);
-      spread = lerp(spreadRitual * tighten, spreadFinal, reopen);
-    }
-
-    // camera drift + pointer parallax (the altar/certificate plane stays locked)
-    const amp = (F >= K.circlesOn ? lerp(0.05, 0.13, pull) : 0.03) * this.cam.distance;
-    this.cam.offsetX = Math.sin(t * 0.37 + 1.3) * amp * 0.35 + mx * amp;
-    this.cam.offsetY = Math.cos(t * 0.29) * amp * 0.35 - my * amp;
+    // pointer parallax: during the ritual limited so the video (the bottom of the well)
+    // never shows its edges; at the end much freer
+    const sAltar = D / (D + lockZ);
+    const pxPerOffset = ppuL * (1 - sAltar); // how far the altar plane slides per unit of camera offset
+    const ampRx = Math.min(0.16 * D, (0.018 * W) / Math.max(pxPerOffset, 1e-3));
+    const ampRy = Math.min(0.16 * D, (0.018 * H) / Math.max(pxPerOffset, 1e-3));
+    const ampF = 0.2 * D;
+    const ampX = lerp(ampRx, ampF, pull);
+    const ampY = lerp(ampRy, ampF, pull);
+    this.cam.offsetX = mx * ampX + Math.sin(t * 0.37 + 1.3) * ampX * 0.18;
+    this.cam.offsetY = -my * ampY + Math.cos(t * 0.29) * ampY * 0.18;
     this.cam.update();
+    // the video slides exactly like the altar plane
+    const shiftX = pxPerOffset * this.cam.offsetX;
+    const shiftY = -pxPerOffset * this.cam.offsetY;
+    this.post.composite.uniforms.uParallax.value.set(-shiftX / W, shiftY / H);
+
+    // ---------- depth of the circle: compact during the ritual, a deep stack at the end
+    const spreadRitual = SPREAD_K * D;
+    const tighten = F >= 0 ? 1 - 0.7 * smooth(K.assembled - 6, K.assembled, F) * (1 - smooth(K.assembled, K.assembled + 4, F)) : 1;
+    const reopen = F >= 0 ? easeOutCubic((F - K.assembled) / 32) : 0;
+    const spread = spreadRitual * tighten;
 
     // ---------- events
     if (F >= 0) {
@@ -710,37 +760,49 @@ export class RitualEngine {
       if (this.lastF < K.uiOn && F >= K.uiOn) this.events.onUiReady?.();
     }
 
-    // ---------- circle layers: fly up the tunnel, lock in, then open in depth
+    // ---------- circle layers: fly up the tunnel, lock in, then open into a deep stack
     const circlesVisible = F >= K.circlesOn - 1;
     this.construct.visible = circlesVisible && this.layers.length > 0;
     const impactHeat = this.envelope(this.fxFlare, 0.5) * this.fxFlare.s;
     const idle = F >= K.certSettled;
     const spinTarget = F < 0 ? 1 : lerp(1, 2.4, smooth(K.circlesOn, K.zoomSettled, F)) * (1 - 0.5 * pull);
     this.spinBoost = lerp(this.spinBoost, spinTarget, 1 - Math.exp(-dt * 2));
-    const hangRise = F >= 0 ? smooth(K.assembled + 8, K.pullBackEnd, F) : 0;
     if (this.construct.visible && P) {
+      for (const [gid, g] of this.groups) {
+        g.angle += g.spin * P.spinScale * this.spinBoost * dt;
+        this.groups.set(gid, g);
+      }
       let hangIdx = 0;
       this.layers.forEach((l, i) => {
         const a = l.art;
         const u = l.mat.uniforms;
-        // tunnel flight
         const fl = clamp01((F - K.circlesOn) / Math.max(1, a.arrive - K.circlesOn));
         const e = easeInOutCubic(fl);
-        let zTarget = a.zSlot * spread;
-        if (a.hang) {
-          zTarget = lerp(zTarget, ZC + 0.28 + hangIdx * 0.2, hangRise);
-          hangIdx++;
-        }
+        const zFinal = this.finalZ(a, a.hang ? hangIdx++ : 0);
+        const zTarget = lerp(a.zSlot * spread, zFinal, reopen);
         const z = lerp(a.zStart, zTarget, e);
         const sp = a.spiral * (1 - e);
         const sa = t * 0.6 + i * 1.7;
-        l.mesh.position.set(Math.cos(sa) * sp, Math.sin(sa) * sp, z);
         l.angle += a.spin * P.spinScale * this.spinBoost * dt;
-        l.mesh.rotation.z = l.angle + a.twist * (1 - e);
+        let x = Math.cos(sa) * sp;
+        let y = Math.sin(sa) * sp;
+        let rot = l.angle + a.twist * (1 - e);
+        if (a.orbit) {
+          const ga = (this.groups.get(a.orbit.group)?.angle ?? 0) + a.orbit.a;
+          x += Math.cos(ga) * a.orbit.r;
+          y += Math.sin(ga) * a.orbit.r;
+          rot += ga + Math.PI / 2;
+        }
+        // depth compensation at the end: same picture at rest, real depth under the mouse
+        const sRel = D / Math.max(D + lockZ - z, 1e-3);
+        const comp = lerp(1, 1 / Math.max(sRel, 0.05), reopen);
+        l.mesh.scale.setScalar(comp);
+        l.mesh.position.set(x * comp, y * comp, z);
+        l.mesh.rotation.z = rot;
         l.mesh.renderOrder = orderFor(z);
         if (this.trigger(F, a.arrive)) {
           l.lockT = 0;
-          this.sparks.burst(Math.round(24 * P.particleDensity), { r0: a.radius * 0.95, speed: 0.35, up: 0.4, z, heat: 0.9, size: 0.008, life: 0.7 });
+          this.sparks.burst(Math.round((a.orbit ? 8 : 24) * P.particleDensity), { r0: a.radius * 0.95, speed: 0.35, up: 0.4, z, heat: 0.9, size: 0.008, life: 0.7 });
         }
         l.lockT += dt;
         const lock = Math.exp(-l.lockT * 4);
@@ -748,9 +810,10 @@ export class RitualEngine {
         u.uReveal.value = clamp01((F - r0) / (r1 - r0));
         u.uTime.value = t;
         const breathe = idle ? 0.08 * Math.sin(t * 1.3 + i) : 0;
-        const settle = lerp(1, a.hang ? 0.7 : 0.62, smooth(K.certBirth, K.certArrive, F));
+        const settle = lerp(1, a.hang ? 0.7 : 0.66, smooth(K.certBirth, K.certArrive, F));
         const deep = 1 - 0.25 * dive * (1 - pull) * (portrait ? 1.3 : 1);
-        const fog = Math.exp(Math.min(0, z) / 8);
+        // fog: the deeper below the locked plane, the dimmer
+        const fog = Math.exp(Math.min(0, z - lockZ + 0.3) / (pull > 0.5 ? 7 : 8));
         u.uIntensity.value = a.intensity * (1 + impactHeat * 0.7 + lock * 0.8) * settle * deep * fog * (1 + breathe);
         u.uHeat.value = 0.8 + impactHeat * 0.8 + lock * 1.2 + 0.08 * Math.sin(t * 2 + i);
         u.uGlowAmt.value = 0.9 * P.bloom * (1 + impactHeat * 0.6 + lock);
@@ -785,9 +848,12 @@ export class RitualEngine {
       u.uTime.value = t;
       u.uSpread.value = Math.max(spread, 0.05);
       u.uCamZ.value = this.cam.z;
-      u.uCamD.value = this.cam.distance;
+      u.uCamD.value = D;
+      u.uFinalMix.value = reopen;
+      u.uZTop.value = ZC - 0.12;
+      u.uDepth.value = FINAL_DEPTH + 0.9;
       u.uOpacity.value = on * 0.55;
-      this.swarm.back.renderOrder = orderFor(ZC * pull) - 1;
+      this.swarm.back.renderOrder = orderFor(lerp(0, ZC - 0.1, reopen)) - 1;
       this.swarm.front.renderOrder = 6000;
     }
 
@@ -811,7 +877,7 @@ export class RitualEngine {
     this.sparks.emberRadius = F >= K.circlesOn ? 1.1 : 0.9;
     // lots of fine motes hanging around the finished circle, in front of and behind the sheet
     this.dust.dustRate = F >= 0 ? smooth(K.assembled, K.certArrive, F) * 55 * density : 0;
-    this.dust.dustVolume = { r: 1.7, z0: -0.2, z1: ZC + 1.1 };
+    this.dust.dustVolume = { r: 1.9, z0: ZC - 0.2 - FINAL_DEPTH - 1.5, z1: ZC + 0.5 };
     const pointScale = this.cam.pointScale * this.renderer.getPixelRatio();
     for (const ps of [this.sparks, this.dust, this.engraveSparks]) {
       const pu = ps.material.uniforms;
@@ -888,7 +954,7 @@ export class RitualEngine {
     u.uHeat.value = 1 - smooth(K.certBirth + 6, K.certArrive + 6, F);
     u.uTime.value = this.time;
     u.uMouse.value.set(this.mouseS.x, this.mouseS.y);
-    u.uShimmerAmt.value = 0.55 * smooth(K.certArrive - 10, K.certArrive + 20, F);
+    u.uShimmerAmt.value = 0.85 * smooth(K.certArrive - 10, K.certArrive + 20, F);
     const eProg = clamp01((F - K.engraveStart) / (K.engraveEnd - K.engraveStart));
     u.uEngrave.value = eProg;
 
@@ -927,7 +993,7 @@ export class RitualEngine {
       // Big and readable in front of the viewer, then it falls like a leaf.
       const targetPx = Math.min(this.cam.width * 0.84, this.cam.height * 0.62 * 1.43, 860);
       const sShow = Math.max(1.05, targetPx / (PAPER_W * this.cam.ppu));
-      const zShow = Math.min(this.cam.heightForScale(sShow), this.cam.distance * 0.82);
+      const zShow = Math.min(this.cam.heightForScale(sShow), this.cam.lockZ + this.cam.distance * 0.82);
       const appear = easeOutCubic(tp / P_APPEAR);
       const fallT = clamp01((tp - P_HOLD_END) / (P_FALL_END - P_HOLD_END));
       const fall = easeInOutCubic(fallT);

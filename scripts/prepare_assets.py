@@ -101,8 +101,52 @@ def certificate():
     out = im.convert("RGBA")
     out.putalpha(alpha)
     out = out.crop(box)
+    out = worn_top_edge(out)
     out.save(os.path.join(ASSETS, "certificate.webp"), quality=92, method=6)
     print("certificate crop box", box, "-> size", out.size)
+
+
+def worn_top_edge(img):
+    """
+    The source picture's top edge is a perfectly straight cut, unlike the torn, worn left,
+    right and bottom edges. Give it the same character: an irregular profile (fractal noise +
+    a few nicks), a soft 2 px falloff and the slightly darker worn rim of the other sides.
+    """
+    a = np.asarray(img).astype(np.float32)
+    H, W, _ = a.shape
+    rng = np.random.default_rng(1666)
+
+    def noise(scale):
+        n = W // scale + 3
+        pts = rng.normal(size=n)
+        xs = np.linspace(0, n - 1, W)
+        i = np.floor(xs).astype(int)
+        f = xs - i
+        f = f * f * (3 - 2 * f)
+        return pts[i] * (1 - f) + pts[np.minimum(i + 1, n - 1)] * f
+
+    prof = 5.0 + 2.6 * noise(110) + 1.5 * noise(28) + 0.6 * noise(7)
+    for _ in range(9):  # small nicks and tears
+        cx = rng.uniform(0, W)
+        w = rng.uniform(5, 16)
+        d = rng.uniform(2.5, 6.5)
+        prof += d * np.exp(-(((np.arange(W) - cx) / w) ** 2))
+    # blend smoothly into the side edges
+    ramp = np.clip(np.minimum(np.arange(W), W - 1 - np.arange(W)) / 40.0, 0, 1)
+    prof = np.clip(prof * ramp + 1.0 * (1 - ramp), 1.0, 20.0)
+
+    y = np.arange(40, dtype=np.float32)[:, None]
+    d = y - prof[None, :]
+    alpha_top = np.clip(d / 2.2 + 0.5, 0, 1)
+    band = a[:40]
+    band[..., 3] = np.minimum(band[..., 3], alpha_top * 255)
+    # worn rim: a little darker and warmer right at the new edge
+    rim = 1 - 0.22 * np.exp(-np.clip(d, 0, None) / 4.5)
+    band[..., 0] *= rim
+    band[..., 1] *= rim * 0.98 + 0.02 * rim ** 2
+    band[..., 2] *= rim * 0.95
+    a[:40] = band
+    return Image.fromarray(np.clip(a, 0, 255).astype(np.uint8), "RGBA")
 
 
 def seal():

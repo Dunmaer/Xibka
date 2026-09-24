@@ -42,6 +42,10 @@ for (let i = 0; i < N; i++) {
       },
     };
     ctx.save();
+    if (l.orbit) {
+      ctx.translate(Math.cos(l.orbit.a) * l.orbit.r, Math.sin(l.orbit.a) * l.orbit.r);
+      ctx.rotate(l.orbit.a + Math.PI / 2);
+    }
     pen.ink('a');
     ctx.globalAlpha = l.hang ? 0.5 : 1;
     l.draw(pen);
@@ -50,7 +54,7 @@ for (let i = 0; i < N; i++) {
   const fig = document.createElement('figure');
   fig.appendChild(c);
   const cap = document.createElement('figcaption');
-  cap.textContent = `${s.name} · ${P.design.architecture} · ${P.design.layers.map((l) => l.id).join(', ')}`;
+  cap.textContent = `${s.name} · ${P.design.architecture} · ${P.design.layers.length} layers`;
   fig.appendChild(cap);
   grid.appendChild(fig);
 }

@@ -26,6 +26,10 @@ export function drawFlatCircle(ctx: CanvasRenderingContext2D, P: RitualParams, l
   for (const l of P.design.layers) {
     if (skipHanging && l.hang) continue;
     ctx.save();
+    if (l.orbit) {
+      ctx.translate(Math.cos(l.orbit.a) * l.orbit.r, Math.sin(l.orbit.a) * l.orbit.r);
+      ctx.rotate(l.orbit.a + Math.PI / 2);
+    }
     pen.ink('a');
     l.draw(pen);
     ctx.restore();
