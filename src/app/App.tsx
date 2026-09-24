@@ -10,7 +10,10 @@ import { makeRitualParams, type RitualParams } from '../features/ritual/params';
 import { renderPaper } from '../features/ritual/art/paperArt';
 import { F as K } from '../features/ritual/timeline';
 import { CertificateView, type CertStage } from '../features/certificate/CertificateView';
-import { canvasToBlob, makeThumbnail, renderCertificate } from '../features/certificate/renderCertificate';
+import {
+  canvasToBlob, makeThumbnail, renderCertificate, renderCertificateLayers, type CertificateLayers,
+} from '../features/certificate/renderCertificate';
+import { RitualAudio } from '../features/ritual/audio';
 import { ArchivePanel, ArchiveViewer } from '../features/archive/ArchivePanel';
 import { deleteCurse, listCurses, newId, saveCurse, type CurseRecord } from '../features/archive/archiveDb';
 import { downloadBlob, safeFileName } from '../utils/export/download';
@@ -41,6 +44,7 @@ const SAMPLES: Record<Lang, CurseInput> = {
 export function App() {
   const { t, lang } = useI18n();
   const deck = useMemo(() => new VideoDeck(), []);
+  const audio = useMemo(() => new RitualAudio(), []);
   const driverRef = useRef<RitualDriver | null>(null);
   const [webgl, setWebgl] = useState(true);
   const [stableReady, setStableReady] = useState(false);
@@ -63,6 +67,10 @@ export function App() {
 
   const currentRef = useRef<Current | null>(null);
   const certRef = useRef<Promise<HTMLCanvasElement> | null>(null);
+  const certLayersRef = useRef<CertificateLayers | null>(null);
+  const preparedRef = useRef<Current | null>(null);
+  /** Certificate rendering is heavy: it waits until the note lies on the altar (or a skip). */
+  const pendingCertRef = useRef<{ cur: Current; save: boolean; timer: number } | null>(null);
   const certBlobRef = useRef<Blob | null>(null);
   const birthPendingRef = useRef(false);
 
@@ -90,11 +98,14 @@ export function App() {
     p.then(() => setCertStage((s) => (s === 'hidden' ? 'birth' : s)));
   }, []);
 
+  const startPendingRef = useRef<() => void>(() => {});
   const events = useMemo(
     () => ({
       onLanded: () => {
         deck.startRitual();
         driverRef.current?.beginRitual();
+        // the slow part of the video has begun: a good moment to draw the certificate
+        window.setTimeout(() => startPendingRef.current(), 700);
       },
       onCertBirth: () => {
         birthPendingRef.current = true;
@@ -115,7 +126,13 @@ export function App() {
       if (old) URL.revokeObjectURL(old);
       return null;
     });
-    const job = renderCertificate({ params: cur.params, lang: cur.lang, createdAt: cur.createdAt }).then(async (canvas) => {
+    certLayersRef.current = null;
+    const job = renderCertificateLayers({ params: cur.params, lang: cur.lang, createdAt: cur.createdAt }).then(async (layers) => {
+      if (currentRef.current !== cur) return layers.final;
+      certLayersRef.current = layers;
+      // the 3D view shows the sheet itself (engraving, shimmer); hand it over once the scene is ready
+      if (preparedRef.current === cur) driverRef.current?.setCertificate(layers);
+      const canvas = layers.final;
       const blob = await canvasToBlob(canvas, 'image/png');
       certBlobRef.current = blob;
       setCertUrl(URL.createObjectURL(blob));
@@ -137,6 +154,16 @@ export function App() {
     return job;
   }, [refreshArchive]);
 
+  const startPendingCert = useCallback(() => {
+    const p = pendingCertRef.current;
+    if (!p) return;
+    pendingCertRef.current = null;
+    window.clearTimeout(p.timer);
+    prepareCertificate(p.cur, p.save);
+  }, [prepareCertificate]);
+
+  startPendingRef.current = startPendingCert;
+
   // ------------------------------------------------------------------ ritual
   const runRitual = useCallback(
     async (cur: Current, opts: { save: boolean; paperLang?: Lang }) => {
@@ -146,13 +173,19 @@ export function App() {
       setCertStage('hidden');
       birthPendingRef.current = false;
       currentRef.current = cur;
-      prepareCertificate(cur, opts.save);
+      if (pendingCertRef.current) window.clearTimeout(pendingCertRef.current.timer);
+      certLayersRef.current = null;
+      certRef.current = null;
+      pendingCertRef.current = { cur, save: opts.save, timer: window.setTimeout(startPendingCert, 9000) };
+      if (DEBUG_FRAME !== null) startPendingCert();
       await ensureFonts(cur.lang, `${cur.input.name} ${cur.input.reason} ${cur.input.punishment}`);
       const paper = await renderPaper(cur.input, STRINGS[opts.paperLang ?? cur.lang]);
       await loadedRef.current;
       const driver = driverRef.current;
       if (!driver) return;
       driver.prepare(cur.params, paper);
+      preparedRef.current = cur;
+      if (certLayersRef.current) driver.setCertificate(certLayersRef.current);
       deck.playStable();
       setScreen('ritual');
       setBusy(false);
@@ -164,26 +197,29 @@ export function App() {
       }
       driver.dropPaper();
     },
-    [deck, prepareCertificate, revealCert, webgl],
+    [deck, startPendingCert, revealCert, webgl],
   );
 
   const onSubmit = useCallback(
     (input: CurseInput) => {
-      // Inside the click: allow sound for the ritual video later on.
+      // Inside the click: allow sound for the ritual video (and the synthesised sounds) later on.
       deck.setSound(sound);
       deck.unlock();
+      audio.unlock();
+      audio.setEnabled(sound);
       const cur: Current = { params: makeRitualParams(input), input, lang, createdAt: Date.now() };
       void runRitual(cur, { save: true });
     },
-    [deck, sound, lang, runRitual],
+    [deck, audio, sound, lang, runRitual],
   );
 
   const onReplay = useCallback(() => {
     const cur = currentRef.current;
     if (!cur) return;
     deck.unlock();
+    audio.unlock();
     void runRitual(cur, { save: false });
-  }, [deck, runRitual]);
+  }, [deck, audio, runRitual]);
 
   const onRestart = useCallback(() => {
     driverRef.current?.toIdle();
@@ -195,8 +231,9 @@ export function App() {
   }, [deck]);
 
   const onSkip = useCallback(() => {
+    startPendingCert();
     driverRef.current?.jumpTo(K.certBirth - 2);
-  }, []);
+  }, [startPendingCert]);
 
   const onDownload = useCallback(async () => {
     const cur = currentRef.current;
@@ -212,9 +249,11 @@ export function App() {
       storage.set(SOUND_KEY, next ? '1' : '0');
       deck.setSound(next);
       deck.unlock();
+      audio.unlock();
+      audio.setEnabled(next);
       return next;
     });
-  }, [deck]);
+  }, [deck, audio]);
 
   // ------------------------------------------------------------------ archive viewer
   const openRecord = useCallback(async (r: CurseRecord) => {
@@ -246,8 +285,10 @@ export function App() {
     setArchiveOpen(false);
     deck.setSound(sound);
     deck.unlock();
+    audio.unlock();
+    audio.setEnabled(sound);
     void runRitual({ params: makeRitualParams(r.input), input: r.input, lang: r.lang, createdAt: r.createdAt }, { save: false });
-  }, [viewer, closeViewer, deck, sound, runRitual]);
+  }, [viewer, closeViewer, deck, audio, sound, runRitual]);
 
   const removeRecord = useCallback(
     async (r: CurseRecord) => {
@@ -283,7 +324,7 @@ export function App() {
   return (
     <div className={`app app--${screen}`} data-ready={stableReady ? '1' : undefined}>
       <div className="poster" aria-hidden="true" style={{ backgroundImage: `url(${import.meta.env.BASE_URL}media/poster.jpg)` }} />
-      <RitualStage deck={deck} events={events} onDriver={onDriver} visible={stableReady} />
+      <RitualStage deck={deck} audio={audio} events={events} onDriver={onDriver} visible={stableReady} />
 
       <TopBar
         sound={sound}
@@ -312,7 +353,8 @@ export function App() {
             stage={certStage}
             imageUrl={certUrl}
             showActions={uiReady}
-            onLayout={(x, y) => driverRef.current?.setFinalCenter(x, y)}
+            webgl={webgl}
+            onLayout={(x, y, w, h) => driverRef.current?.setFinalCenter(x, y, w, h)}
             onDownload={onDownload}
             onReplay={onReplay}
             onRestart={onRestart}

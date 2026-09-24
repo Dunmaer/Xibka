@@ -31,7 +31,7 @@ void main(){
 }
 `;
 
-/** One layer of the magic circle. Core + glow are single-channel textures. */
+/** One layer of the magic circle: R/G/B channels = structure / inscriptions / accents. */
 export const CIRCLE_FRAG = /* glsl */ `
 uniform sampler2D uCore;
 uniform sampler2D uGlow;
@@ -42,28 +42,30 @@ uniform float uHeat;
 uniform float uTime;
 uniform float uPhase;
 uniform float uFade;
-uniform vec3 uDeep;
-uniform vec3 uMid;
+uniform vec3 uColA;
+uniform vec3 uColB;
+uniform vec3 uColC;
 uniform vec3 uHot;
-uniform vec3 uGlowCol;
 varying vec2 vUv;
 ${NOISE}
 void main(){
   vec2 p = vUv*2.0 - 1.0;
   float ang = fract(atan(p.x, p.y)/6.2831853 + 1.0 + uPhase);
-  float c = texture2D(uCore, vUv).r;
-  float g = texture2D(uGlow, vUv).r;
+  vec3 c = texture2D(uCore, vUv).rgb;
+  vec3 g = texture2D(uGlow, vUv).rgb;
   float rv = uReveal * 1.08;
   float vis = 1.0 - smoothstep(rv - 0.04, rv, ang);
   float running = step(0.0005, uReveal) * (1.0 - step(0.999, uReveal));
   float lead = exp(-pow((rv - 0.02 - ang) * 18.0, 2.0)) * running;
-  float fl = 0.8 + 0.2 * vnoise(vec2(ang*90.0 + uTime*1.3, uTime*3.1 + length(p)*20.0));
-  float heat = c * uHeat * (0.85 + 0.3*fl);
-  vec3 lineCol = mix(uDeep, uMid, smoothstep(0.0, 0.55, heat));
-  lineCol = mix(lineCol, uHot, smoothstep(0.95, 1.7, heat));
-  vec3 col = lineCol * c * 0.95 + uGlowCol * g * uGlowAmt * 0.32 * (0.8 + 0.4*fl);
+  float fl = 0.82 + 0.18 * vnoise(vec2(ang*90.0 + uTime*1.3, uTime*3.1 + length(p)*20.0));
+  float lines = max(c.r, max(c.g, c.b));
+  vec3 ink = uColA * c.r + uColB * c.g + uColC * c.b;
+  vec3 glow = uColA * g.r + uColB * g.g + uColC * g.b;
+  // hot cores: the brightest strokes lean towards white when heated
+  vec3 col = mix(ink, uHot * lines, smoothstep(1.0, 1.8, uHeat) * 0.6) * 1.05 * fl;
+  col += glow * uGlowAmt * 0.38;
   col *= vis * uIntensity * uFade;
-  col += uHot * lead * (c * 2.2 + g * 0.8) * uIntensity * uFade;
+  col += uHot * lead * (lines * 2.2 + (g.r + g.g + g.b) * 0.4) * uIntensity * uFade;
   gl_FragColor = vec4(col, 0.0);
 }
 `;
@@ -181,24 +183,27 @@ void main(){
 }
 `;
 
-/** Flying infernal letters, instanced along wavy orbits. */
+/** Flying infernal letters (and the chain links between them), instanced along wavy orbits. */
 export const GLYPH_VERT = /* glsl */ `
 attribute float aGlyph;
-attribute vec4 aOrbit;   // radius, zBase, angularSpeed, phase
+attribute vec4 aOrbit;   // radius, z (slot or camera fraction), angularSpeed, phase
 attribute vec4 aWave;    // radialAmp, radialFreq, zAmp, size
-attribute float aAlpha;
+attribute vec4 aExtra;   // alpha, blur, mode (0 = in the circle, 1 = in front of the camera), flicker
 uniform float uTime;
 uniform float uSpread;
 uniform float uSwirl;
+uniform float uCamZ;
+uniform float uCamD;
 varying vec2 vUv;
 varying float vAlpha;
 varying float vGlyph;
+varying float vBlur;
 void main(){
   float th = aOrbit.w + uTime * aOrbit.z * uSwirl;
   float r = aOrbit.x + aWave.x * sin(th * aWave.y + uTime * 0.7 + aOrbit.w * 3.0);
-  float z = aOrbit.y * uSpread + aWave.z * sin(th * 2.0 + uTime * 0.9 + aOrbit.w);
+  float zc = aExtra.z > 0.5 ? uCamZ - aOrbit.y * uCamD : aOrbit.y * uSpread;
+  float z = zc + aWave.z * sin(th * 2.0 + uTime * 0.9 + aOrbit.w);
   vec3 center = vec3(cos(th) * r, sin(th) * r, z);
-  // local frame: x along the path, y pointing outward (letters stand on the orbit)
   float dir = sign(aOrbit.z);
   vec2 tangent = vec2(-sin(th), cos(th)) * dir;
   vec2 outward = vec2(cos(th), sin(th));
@@ -206,9 +211,12 @@ void main(){
   vec3 pos = center + vec3(tangent * position.x * s + outward * position.y * s, 0.0);
   vUv = uv;
   vGlyph = aGlyph;
-  float flick = 0.75 + 0.25 * sin(uTime * 3.0 + aOrbit.w * 17.0);
-  vAlpha = aAlpha * flick;
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+  vBlur = aExtra.y;
+  float flick = 1.0 - aExtra.w + aExtra.w * (0.6 + 0.4 * sin(uTime * 3.0 + aOrbit.w * 17.0));
+  vec4 mv = modelViewMatrix * vec4(pos, 1.0);
+  float near = smoothstep(0.12, 0.3, -mv.z / uCamD);
+  vAlpha = aExtra.x * flick * near;
+  gl_Position = projectionMatrix * mv;
 }
 `;
 
@@ -216,16 +224,99 @@ export const GLYPH_FRAG = /* glsl */ `
 uniform sampler2D uAtlas;
 uniform float uOpacity;
 uniform vec3 uColor;
+uniform vec3 uColor2;
 varying vec2 vUv;
 varying float vAlpha;
 varying float vGlyph;
+varying float vBlur;
 void main(){
   float gi = floor(vGlyph + 0.5);
-  vec2 cell = vec2(mod(gi, 8.0), 3.0 - floor(gi / 8.0));
-  vec2 uv = (cell + vUv) / vec2(8.0, 4.0);
-  float g = texture2D(uAtlas, uv).r;
+  vec2 cell = vec2(mod(gi, 8.0), 4.0 - floor(gi / 8.0));
+  vec2 uv = (cell + vUv) / vec2(8.0, 5.0);
+  float g = texture2D(uAtlas, uv, vBlur).r;
   float a = g * vAlpha * uOpacity;
-  gl_FragColor = vec4(uColor * a, 0.0);
+  vec3 col = gi > 31.5 ? uColor2 : uColor;
+  gl_FragColor = vec4(col * a, 0.0);
+}
+`;
+
+/** Tunnel passers: a textured ring/sigil in the curse's inks, fading with distance. */
+export const PASSER_FRAG = /* glsl */ `
+uniform sampler2D uCore;
+uniform vec3 uColA;
+uniform vec3 uColB;
+uniform vec3 uColC;
+uniform float uAlpha;
+varying vec2 vUv;
+void main(){
+  vec3 c = texture2D(uCore, vUv).rgb;
+  vec3 col = (uColA * c.r + uColB * c.g + uColC * c.b) * uAlpha;
+  gl_FragColor = vec4(col, 0.0);
+}
+`;
+
+/**
+ * The certificate as a real sheet in the scene:
+ *  - a shimmering, mouse-reactive fragment of the magic circle in the curse's colours
+ *  - the seal being engraved: a glowing front runs down the stamp and reveals the impression
+ */
+export const CERT_FRAG = /* glsl */ `
+uniform sampler2D uBase;
+uniform sampler2D uSealed;
+uniform sampler2D uSealMask;
+uniform sampler2D uShimmer;
+uniform vec4 uSealRect;   // x, y, w, h in uv (y up)
+uniform float uEngrave;
+uniform float uOpacity;
+uniform float uHeat;
+uniform float uTime;
+uniform float uShimmerAmt;
+uniform vec2 uMouse;
+uniform vec3 uColA;
+uniform vec3 uColB;
+uniform vec3 uColC;
+uniform vec3 uHot;
+varying vec2 vUv;
+${NOISE}
+void main(){
+  vec4 base = texture2D(uBase, vUv);
+  if (base.a < 0.005) discard;
+  vec3 col = base.rgb;
+
+  // iridescent fragment of the circle: colour flows with time and the viewing angle (mouse)
+  float m = texture2D(uShimmer, vUv).r;
+  float phase = dot(vUv, vec2(2.4, 1.6)) + uMouse.x * 1.4 - uMouse.y * 1.1 + uTime * 0.15;
+  vec3 iri = mix(uColA, uColB, 0.5 + 0.5 * sin(phase * 3.0));
+  iri = mix(iri, uColC, 0.5 + 0.5 * sin(phase * 4.3 + 1.7));
+  float sheen = pow(0.5 + 0.5 * sin(phase * 5.0 - uTime * 0.6), 3.0);
+  col = mix(col, col * (0.62 + 0.5 * iri), m * uShimmerAmt);
+  col += iri * m * uShimmerAmt * (0.05 + 0.1 * sheen);
+
+  // seal engraving
+  vec2 su = (vUv - uSealRect.xy) / uSealRect.zw;
+  vec3 emit = vec3(0.0);
+  if (su.x > 0.0 && su.x < 1.0 && su.y > 0.0 && su.y < 1.0) {
+    vec3 sealed = texture2D(uSealed, su).rgb;
+    float ink = texture2D(uSealMask, su).r;
+    float y = 1.0 - su.y; // 0 at the top of the seal
+    float n = fbm(su * 9.0 + 3.0) * 0.18;
+    float front = uEngrave * 1.25 - 0.1;
+    float revealed = smoothstep(front + 0.02, front - 0.03, y + n);
+    col = mix(col, sealed, revealed);
+    float band = exp(-pow((y + n - front) / 0.035, 2.0)) * step(0.001, uEngrave) * (1.0 - step(0.999, uEngrave));
+    emit = mix(uColA, uHot, 0.5) * ink * band * 2.2;
+    // freshly cut lines keep a fading glow
+    emit += uColA * ink * revealed * (1.0 - smoothstep(0.0, 0.35, front - (y + n))) * 0.6 * step(0.001, uEngrave) * (1.0 - uEngrave * 0.8);
+  }
+
+  // birth heat: the sheet arrives glowing along its edges
+  vec2 q = abs(vUv - 0.5) * 2.0;
+  float edge = smoothstep(0.75, 1.0, max(q.x, q.y));
+  emit += mix(uColA, uHot, 0.4) * uHeat * (0.03 + edge * 0.9);
+  col = mix(col, col * vec3(1.08, 1.0, 0.92), uHeat * 0.4);
+
+  float a = base.a * uOpacity;
+  gl_FragColor = vec4(col * a + emit * uOpacity, a);
 }
 `;
 
@@ -310,12 +401,13 @@ uniform sampler2D tSrc;
 uniform vec2 uTexel;
 uniform float uThreshold;
 varying vec2 vUv;
+vec3 tap(vec2 o){
+  vec4 c = texture2D(tSrc, vUv + uTexel * o);
+  // opaque sheets (the note, the certificate) do not bloom; light on top of them does
+  return max(c.rgb - vec3(0.85) * clamp(c.a, 0.0, 1.0), 0.0);
+}
 void main(){
-  vec3 c = texture2D(tSrc, vUv + uTexel*vec2(-0.5,-0.5)).rgb
-         + texture2D(tSrc, vUv + uTexel*vec2( 0.5,-0.5)).rgb
-         + texture2D(tSrc, vUv + uTexel*vec2(-0.5, 0.5)).rgb
-         + texture2D(tSrc, vUv + uTexel*vec2( 0.5, 0.5)).rgb;
-  c *= 0.25;
+  vec3 c = (tap(vec2(-0.5,-0.5)) + tap(vec2(0.5,-0.5)) + tap(vec2(-0.5,0.5)) + tap(vec2(0.5,0.5))) * 0.25;
   float l = max(c.r, max(c.g, c.b));
   float k = smoothstep(uThreshold, uThreshold + 0.6, l);
   gl_FragColor = vec4(c * k, 1.0);
@@ -370,6 +462,7 @@ uniform float uAspect;
 uniform vec2 uCoverScale;
 uniform vec2 uCoverOffset;
 uniform vec2 uShake;
+uniform vec2 uParallax;   // video parallax (uv), follows the mouse
 uniform vec4 uShock;      // centre.xy (uv), radius (in screen heights), strength
 uniform float uHeatHaze;
 uniform vec2 uHazeCenter;
@@ -390,7 +483,7 @@ void main(){
   vec2 hd = (uv - uHazeCenter) * vec2(uAspect, 1.0);
   float hz = uHeatHaze * exp(-dot(hd, hd) * 6.0);
   uv += (vec2(vnoise(uv*40.0 + uTime*1.5), vnoise(uv*40.0 - uTime*1.7)) - 0.5) * 0.006 * hz;
-  vec2 vuv = (uv + uShake) * uCoverScale + uCoverOffset;
+  vec2 vuv = (uv + uShake + uParallax) * uCoverScale + uCoverOffset;
   vec3 vid = mix(texture2D(tStable, vuv).rgb, texture2D(tPribliji, vuv).rgb, uMix);
   vid *= uVideoFade;
   vec4 fx = texture2D(tFx, uv + uShake);

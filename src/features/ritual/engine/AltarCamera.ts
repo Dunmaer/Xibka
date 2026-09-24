@@ -21,6 +21,12 @@ export class AltarCamera {
   distance = 3;
   offsetX = 0;
   offsetY = 0;
+  /**
+   * Height of the plane that stays glued to the screen (0 = the altar in the video;
+   * at the end the certificate's plane, so the sheet stays put while the circle below
+   * and the inscriptions above slide with the mouse).
+   */
+  lockZ = 0;
 
   setViewport(w: number, h: number) {
     this.width = w;
@@ -30,12 +36,12 @@ export class AltarCamera {
   update() {
     const { camera: cam, width: W, height: H } = this;
     const D = this.distance;
-    cam.position.set(this.offsetX, this.offsetY, D);
+    cam.position.set(this.offsetX, this.offsetY, this.lockZ + D);
     cam.rotation.set(0, 0, 0);
     cam.updateMatrixWorld(true);
 
     const n = Math.max(0.01, D * 0.01);
-    const f = D + 50;
+    const f = D + this.lockZ + 150;
     const rl = (n * W) / (D * this.ppu); // r - l
     const tb = (n * H) / (D * this.ppu); // t - b
     const cxNdc = (2 * (this.centerX + this.offsetX * this.ppu)) / W - 1;
@@ -53,14 +59,19 @@ export class AltarCamera {
     cam.projectionMatrixInverse.copy(cam.projectionMatrix).invert();
   }
 
-  /** Scale factor of something lifted to height z (relative to the altar plane). */
+  /** Scale factor of something at height z relative to the locked plane. */
   liftScale(z: number) {
-    return this.distance / Math.max(this.distance - z, 1e-3);
+    return this.distance / Math.max(this.distance - (z - this.lockZ), 1e-3);
   }
 
-  /** Height at which an object appears `s` times larger than on the altar. */
+  /** Height at which an object appears `s` times larger than on the locked plane. */
   heightForScale(s: number) {
-    return this.distance * (1 - 1 / s);
+    return this.lockZ + this.distance * (1 - 1 / s);
+  }
+
+  /** World height of the camera. */
+  get z() {
+    return this.lockZ + this.distance;
   }
 
   /** Converts world units to device-independent pixels at the altar plane. */

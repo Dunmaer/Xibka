@@ -60,6 +60,7 @@ export class FallbackStage {
   }
 
   setFinalCenter() {}
+  setCertificate() {}
   resize() {}
   start() {}
 

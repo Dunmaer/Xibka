@@ -1,9 +1,12 @@
 // The ritual is keyed to frame numbers of pribliji.mp4 (24 fps, 271 frames).
 //   0-175  "stable" part of the video (the note lies on the altar, heat builds up)
-//   175    the magic circles activate (burn in, open up in depth)
-//   175-245 the camera dives into the altar (zoom), circles stamp, the note is pulled in and burns
-//   245    the big stamp: flying inscriptions + effects start; the video recedes and vanishes
-//   ~262   the certificate is born at the centre and comes towards the viewer
+//   175    the tunnel opens: rings, letters and signs fly up from the depth of the vortex
+//   175-245 the camera dives into the altar; the pieces arrive one by one and assemble the
+//           magic circle, others overshoot and fly past the camera; the note sinks and burns
+//   245    the circle is complete: impact, flying inscriptions
+//   245-270 the video recedes and vanishes; the circle stays and opens up in depth
+//   262    the certificate rises from the depth and comes to rest in front of the viewer
+//   302-356 the seal is engraved (sparks falling, the sheet trembles), then it settles
 // After the video ends (frame 270) the frame counter keeps running on the clock, so the
 // ritual can be described by one continuous number F.
 
@@ -17,15 +20,21 @@ export const F = {
   paperPullStart: 186,
   paperBurnStart: 198,
   paperGone: 240,
-  stamps: [205, 226] as const,
-  bigStamp: 245,
+  passersFrom: 172,
+  passersTo: 236,
+  assembled: 245,
   lettersOn: 245,
   videoFadeStart: 256,
+  tailAudio: 258,
   pullBackStart: 247,
   pullBackEnd: 300,
   certBirth: 262,
+  certArrive: 298,
+  engraveStart: 304,
+  engraveEnd: 356,
+  certRest: 374,
   certSettled: 300,
-  uiOn: 300,
+  uiOn: 362,
 } as const;
 
 /** Stable-video frames that visually match pribliji frames 1:1 (safe for a hard cut). */

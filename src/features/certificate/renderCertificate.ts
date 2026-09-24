@@ -5,7 +5,8 @@ import { loadImage } from '../../utils/image';
 import { DATE_LOCALE, STRINGS, type Lang } from '../i18n/strings';
 import type { RitualParams } from '../ritual/params';
 import { drawFlatCircle } from '../ritual/art/circleArt';
-import { makeRng } from '../../utils/seed/seed';
+import { hashString, makeRng } from '../../utils/seed/seed';
+import { cssColor } from '../ritual/art/palette';
 import { ensureFonts, FONT } from '../../utils/fonts';
 
 // Geometry measured on certificate.webp (979 x 1360, the cut-out of Sertificate.png).
@@ -149,7 +150,7 @@ function blurred(src: HTMLCanvasElement, blur: number, color: string, dx = 0, dy
  * Presses Pechat.png into the wax: grooves are darker wax, their upper-left walls fall into
  * shadow and the lower-right walls catch the light, like a real impression.
  */
-async function pressSeal(ctx: CanvasRenderingContext2D, S: number, seed: number) {
+async function pressSeal(ctx: CanvasRenderingContext2D, S: number, seed: number): Promise<{ mask: HTMLCanvasElement; px: number; py: number; size: number }> {
   const img = await loadImage(sealMaskUrl);
   const rng = makeRng(seed).fork(31);
   const R = SEAL.r * S;
@@ -226,9 +227,106 @@ async function pressSeal(ctx: CanvasRenderingContext2D, S: number, seed: number)
   ctx.globalCompositeOperation = 'screen';
   ctx.drawImage(rim, px, py);
   ctx.restore();
+  return { mask, px: Math.round(px), py: Math.round(py), size };
+}
+
+function cloneCanvas(src: HTMLCanvasElement) {
+  const c = document.createElement('canvas');
+  c.width = src.width;
+  c.height = src.height;
+  c.getContext('2d')!.drawImage(src, 0, 0);
+  return c;
+}
+
+/**
+ * An enlarged fragment of the curse's circle entering the sheet from one side, at a random
+ * place for every certificate. Stored as a grey mask (white = line); the colour and the
+ * shimmer are added by the 3D view (and statically for the PNG).
+ */
+function shimmerMask(P: RitualParams, createdAt: number, w: number, h: number): HTMLCanvasElement {
+  const rng = makeRng(hashString(String(createdAt), P.seed));
+  const tmp = document.createElement('canvas');
+  tmp.width = w;
+  tmp.height = h;
+  const t = tmp.getContext('2d')!;
+  // centre outside the page on a random side, radius larger than the sheet
+  const side = rng.int(0, 3);
+  const along = rng.range(0.1, 0.9);
+  const out = rng.range(0.05, 0.3);
+  const cx = side === 0 ? -out * w : side === 1 ? (1 + out) * w : along * w;
+  const cy = side === 2 ? -out * h : side === 3 ? (1 + out) * h : along * h;
+  const R = rng.range(0.75, 1.15) * Math.max(w, h);
+  t.translate(cx, cy);
+  t.rotate(rng.range(0, Math.PI * 2));
+  t.scale(R, R);
+  t.strokeStyle = t.fillStyle = '#fff';
+  t.lineCap = 'round';
+  drawFlatCircle(t, P, 4.2 / R);
+  // soft halo around the lines so the colour can flow over the paper
+  t.setTransform(1, 0, 0, 1, 0, 0);
+  const small = document.createElement('canvas');
+  small.width = Math.max(1, Math.round(w / 6));
+  small.height = Math.max(1, Math.round(h / 6));
+  const sc = small.getContext('2d')!;
+  sc.imageSmoothingQuality = 'high';
+  sc.drawImage(tmp, 0, 0, small.width, small.height);
+  t.globalAlpha = 0.9;
+  t.imageSmoothingQuality = 'high';
+  t.drawImage(small, 0, 0, w, h);
+  t.globalAlpha = 1;
+  // keep the middle of the sheet (where the text is) calm
+  t.setTransform(1, 0, 0, 1, 0, 0);
+  t.globalCompositeOperation = 'destination-in';
+  const g = t.createRadialGradient(w / 2, h * 0.45, Math.min(w, h) * 0.18, w / 2, h * 0.45, Math.max(w, h) * 0.62);
+  g.addColorStop(0, 'rgba(0,0,0,0.25)');
+  g.addColorStop(1, 'rgba(0,0,0,1)');
+  t.fillStyle = g;
+  t.fillRect(0, 0, w, h);
+  const mask = document.createElement('canvas');
+  mask.width = w;
+  mask.height = h;
+  const m = mask.getContext('2d')!;
+  m.fillStyle = '#000';
+  m.fillRect(0, 0, w, h);
+  m.drawImage(tmp, 0, 0);
+  return mask;
+}
+
+/** Points on the stamp lines (uv inside the seal crop, y down), sorted top to bottom. */
+function engravePoints(mask: HTMLCanvasElement): [number, number][] {
+  const w = mask.width;
+  const h = mask.height;
+  const data = mask.getContext('2d')!.getImageData(0, 0, w, h).data;
+  const pts: [number, number][] = [];
+  const step = Math.max(2, Math.round(w / 90));
+  for (let y = 0; y < h; y += step) {
+    for (let x = 0; x < w; x += step) if (data[(y * w + x) * 4 + 3] > 140) pts.push([x / w, y / h]);
+  }
+  return pts.sort((a, b) => a[1] - b[1]);
+}
+
+export interface CertificateLayers {
+  /** Finished certificate (what is downloaded / archived). */
+  final: HTMLCanvasElement;
+  /** Sheet with text and watermark, seal not yet engraved. */
+  base: HTMLCanvasElement;
+  /** Crop of the engraved seal region. */
+  sealed: HTMLCanvasElement;
+  /** Crop of the stamp lines (alpha). */
+  sealMask: HTMLCanvasElement;
+  /** Grey mask of the enlarged circle fragment. */
+  shimmer: HTMLCanvasElement;
+  /** Seal crop in uv space of the sheet (x, y, w, h; y up). */
+  sealRect: [number, number, number, number];
+  /** Points of the stamp lines inside the crop (uv, y down), top to bottom. */
+  engrave: [number, number][];
 }
 
 export async function renderCertificate(data: CertificateData, scale = 1.5): Promise<HTMLCanvasElement> {
+  return (await renderCertificateLayers(data, scale)).final;
+}
+
+export async function renderCertificateLayers(data: CertificateData, scale = 1.5): Promise<CertificateLayers> {
   const { params: P, lang } = data;
   const t = STRINGS[lang];
   await ensureFonts(lang, [P.input.name, P.input.reason, P.input.punishment].join(' '));
@@ -341,8 +439,68 @@ export async function renderCertificate(data: CertificateData, scale = 1.5): Pro
   inkText(ctx, t.archiveLine, cx, 962, '#6b1410');
 
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  await pressSeal(ctx, S, P.seed);
-  return canvas;
+  const base = canvas;
+  const sealedFull = cloneCanvas(base);
+  const seal = await pressSeal(sealedFull.getContext('2d')!, S, P.seed);
+  const sealed = document.createElement('canvas');
+  sealed.width = sealed.height = seal.size;
+  sealed.getContext('2d')!.drawImage(sealedFull, seal.px, seal.py, seal.size, seal.size, 0, 0, seal.size, seal.size);
+
+  const shimmer = shimmerMask(P, data.createdAt, Math.round(base.width / 2), Math.round(base.height / 2));
+
+  // Static version of the shimmering fragment for the PNG: the curse's inks soaked into the paper.
+  const final = sealedFull;
+  {
+    const f = final.getContext('2d')!;
+    const tint = document.createElement('canvas');
+    tint.width = final.width;
+    tint.height = final.height;
+    const tc = tint.getContext('2d')!;
+    const pal = P.palette;
+    const grad = tc.createLinearGradient(0, 0, final.width, final.height);
+    grad.addColorStop(0, cssColor(pal.a));
+    grad.addColorStop(0.5, cssColor(pal.b));
+    grad.addColorStop(1, cssColor(pal.c));
+    tc.fillStyle = grad;
+    tc.fillRect(0, 0, final.width, final.height);
+    tc.globalCompositeOperation = 'destination-in';
+    // use the grey mask as alpha
+    const alpha = document.createElement('canvas');
+    alpha.width = shimmer.width;
+    alpha.height = shimmer.height;
+    const ac = alpha.getContext('2d')!;
+    const id = shimmer.getContext('2d')!.getImageData(0, 0, shimmer.width, shimmer.height);
+    for (let i = 0; i < id.data.length; i += 4) {
+      id.data[i + 3] = id.data[i];
+      id.data[i] = id.data[i + 1] = id.data[i + 2] = 255;
+    }
+    ac.putImageData(id, 0, 0);
+    tc.drawImage(alpha, 0, 0, final.width, final.height);
+    // only on the paper itself
+    tc.drawImage(base, 0, 0);
+    f.save();
+    f.globalCompositeOperation = 'multiply';
+    f.globalAlpha = 0.28;
+    f.drawImage(tint, 0, 0);
+    f.globalCompositeOperation = 'soft-light';
+    f.globalAlpha = 0.35;
+    f.drawImage(tint, 0, 0);
+    f.restore();
+    // the seal sits on top of the tint
+    f.drawImage(sealed, seal.px, seal.py);
+  }
+
+  const W = base.width;
+  const H = base.height;
+  return {
+    final,
+    base,
+    sealed,
+    sealMask: seal.mask,
+    shimmer,
+    sealRect: [seal.px / W, 1 - (seal.py + seal.size) / H, seal.size / W, seal.size / H],
+    engrave: engravePoints(seal.mask),
+  };
 }
 
 const HY_MONTHS = [

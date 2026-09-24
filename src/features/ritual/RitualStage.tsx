@@ -4,6 +4,8 @@ import { FallbackStage } from './FallbackStage';
 import type { VideoDeck } from './VideoDeck';
 import type { PaperArt } from './art/paperArt';
 import type { RitualParams } from './params';
+import type { RitualAudio } from './audio';
+import type { CertificateLayers } from '../certificate/renderCertificate';
 
 /** What the app needs from either the WebGL engine or the plain-video fallback. */
 export interface RitualDriver {
@@ -12,7 +14,9 @@ export interface RitualDriver {
   beginRitual(): void;
   jumpTo(frame: number, freeze?: boolean): void;
   toIdle(): void;
-  setFinalCenter(x: number, y: number): void;
+  setFinalCenter(x: number, y: number, w?: number, h?: number): void;
+  /** The finished certificate appears inside the 3D scene (no-op for the fallback). */
+  setCertificate(c: CertificateLayers | null): void;
   resize(): void;
   start(): void;
   dispose(): void;
@@ -29,12 +33,13 @@ function webglAvailable() {
 
 interface Props {
   deck: VideoDeck;
+  audio: RitualAudio;
   events: EngineEvents;
   onDriver: (d: RitualDriver | null, webgl: boolean) => void;
   visible: boolean;
 }
 
-export function RitualStage({ deck, events, onDriver, visible }: Props) {
+export function RitualStage({ deck, audio, events, onDriver, visible }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
   const eventsRef = useRef(events);
@@ -52,7 +57,7 @@ export function RitualStage({ deck, events, onDriver, visible }: Props) {
     let gl = false;
     if (webglAvailable() && canvasRef.current) {
       try {
-        driver = new RitualEngine(canvasRef.current, deck, ev);
+        driver = new RitualEngine(canvasRef.current, deck, ev, audio);
         gl = true;
       } catch (e) {
         console.warn('WebGL ritual unavailable, using fallback', e);

@@ -9,7 +9,9 @@ interface Props {
   stage: CertStage;
   imageUrl: string | null;
   showActions: boolean;
-  onLayout: (cx: number, cy: number) => void;
+  /** With WebGL the sheet itself lives in the 3D scene; this view only keeps its slot + buttons. */
+  webgl: boolean;
+  onLayout: (cx: number, cy: number, w: number, h: number) => void;
   onDownload: () => void;
   onReplay: () => void;
   onRestart: () => void;
@@ -21,7 +23,7 @@ interface Props {
  * The slot is always laid out (invisible) during the ritual so the 3D circle knows where
  * to settle behind it.
  */
-export function CertificateView({ stage, imageUrl, showActions, onLayout, onDownload, onReplay, onRestart, onArchive }: Props) {
+export function CertificateView({ stage, imageUrl, showActions, webgl, onLayout, onDownload, onReplay, onRestart, onArchive }: Props) {
   const { t } = useI18n();
   const slotRef = useRef<HTMLDivElement>(null);
   const paperRef = useRef<HTMLDivElement>(null);
@@ -32,7 +34,7 @@ export function CertificateView({ stage, imageUrl, showActions, onLayout, onDown
   useLayoutEffect(() => {
     const report = () => {
       const r = slotRef.current?.getBoundingClientRect();
-      if (r && r.width > 0) onLayoutRef.current(r.left + r.width / 2, r.top + r.height / 2);
+      if (r && r.width > 0) onLayoutRef.current(r.left + r.width / 2, r.top + r.height / 2, r.width, r.height);
     };
     report();
     const ro = new ResizeObserver(report);
@@ -49,6 +51,10 @@ export function CertificateView({ stage, imageUrl, showActions, onLayout, onDown
     const fl = flareRef.current;
     if (!el || !fl) return;
     gsap.killTweensOf([el, fl]);
+    if (webgl) {
+      gsap.set([el, fl], { autoAlpha: 0 });
+      return;
+    }
     if (stage === 'hidden') {
       gsap.set(el, { autoAlpha: 0 });
       gsap.set(fl, { autoAlpha: 0 });
@@ -92,15 +98,16 @@ export function CertificateView({ stage, imageUrl, showActions, onLayout, onDown
     return () => {
       tl.kill();
     };
-  }, [stage]);
+  }, [stage, webgl]);
 
   return (
     <section className={`cert ${stage !== 'hidden' ? 'cert--on' : ''}`} aria-hidden={stage === 'hidden'}>
       <div className="cert__slot" ref={slotRef}>
         <div className="cert__flare" ref={flareRef} aria-hidden="true" />
         <div className="cert__paper" ref={paperRef}>
-          {imageUrl && <img src={imageUrl} alt={t.certificateTitle} className="cert__img" draggable={false} />}
+          {imageUrl && !webgl && <img src={imageUrl} alt={t.certificateTitle} className="cert__img" draggable={false} />}
         </div>
+        {webgl && stage !== 'hidden' && <span className="sr-only" role="img" aria-label={t.certificateTitle} />}
       </div>
       <div className={`cert__actions ${showActions ? 'is-on' : ''}`}>
         <button type="button" className="btn btn--primary" onClick={onDownload} disabled={!showActions}>

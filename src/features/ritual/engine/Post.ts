@@ -72,6 +72,7 @@ export class Post {
         uCoverScale: { value: new THREE.Vector2(1, 1) },
         uCoverOffset: { value: new THREE.Vector2(0, 0) },
         uShake: { value: new THREE.Vector2(0, 0) },
+        uParallax: { value: new THREE.Vector2(0, 0) },
         uShock: { value: new THREE.Vector4(0.5, 0.5, 0, 0) },
         uHeatHaze: { value: 0 },
         uHazeCenter: { value: new THREE.Vector2(0.5, 0.5) },

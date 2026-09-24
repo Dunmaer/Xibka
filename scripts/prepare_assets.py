@@ -13,6 +13,8 @@ Outputs (all committed, so you only need to re-run this when the raw art changes
     src/assets/certificate.webp                          Sertificate.png with the backdrop cut away (RGBA)
     src/assets/seal-mask.png                             Pechat.png as a white-on-transparent mask
     src/assets/glyphs.svg                                symbols.svg (the 32 infernal letters)
+    public/media/tail.webm, public/media/tail.m4a        the last noise of pribliji.mp4, stretched
+                                                         into a seamless loop (plays after the video)
 """
 import os, shutil, subprocess, sys
 import numpy as np
@@ -118,6 +120,31 @@ def seal():
     print("seal mask box", box)
 
 
+def tail_audio():
+    """Last 1.7 s of pribliji's sound, 4x time-stretched + reverb, crossfaded into a seamless loop."""
+    ff = ffmpeg_bin()
+    src = os.path.join(RAW, "BG altar", "pribliji.mp4")
+    raw = subprocess.run([ff, "-v", "error", "-ss", "9.55", "-t", "1.7", "-i", src, "-vn",
+                          "-af", "atempo=0.5,atempo=0.5,lowpass=f=5200,aecho=0.8:0.85:60|140|260:0.45|0.3|0.2,volume=0.9",
+                          "-ac", "2", "-ar", "48000", "-f", "f32le", "-"], check=True, capture_output=True).stdout
+    sr = 48000
+    y = np.frombuffer(raw, dtype=np.float32).reshape(-1, 2)
+    mix = y * 0.8 + y[::-1] * 0.45
+    x = int(1.2 * sr)
+    n = len(mix) - x
+    out = mix[:n].copy()
+    t = np.linspace(0, 1, x)[:, None]
+    out[:x] = mix[:x] * np.sqrt(t) + mix[n:n + x] * np.sqrt(1 - t)
+    out *= (1 + 0.12 * np.sin(np.linspace(0, 4 * np.pi, n)))[:, None]
+    out /= max(1e-6, np.abs(out).max()) * 1.15
+    pcm = out.astype(np.float32).tobytes()
+    for ext, codec in (("webm", ["-c:a", "libopus", "-b:a", "96k"]), ("m4a", ["-c:a", "aac", "-b:a", "128k"])):
+        dst = os.path.join(PUB, f"tail.{ext}")
+        subprocess.run([ff, "-y", "-v", "error", "-f", "f32le", "-ar", str(sr), "-ac", "2", "-i", "-", *codec, dst],
+                       input=pcm, check=True)
+        print("audio", dst, os.path.getsize(dst) // 1024, "KB")
+
+
 def glyphs():
     shutil.copy(os.path.join(RAW, "symbols.svg"), os.path.join(ASSETS, "glyphs.svg"))
 
@@ -126,6 +153,6 @@ if __name__ == "__main__":
     os.makedirs(PUB, exist_ok=True)
     os.makedirs(ASSETS, exist_ok=True)
     only = sys.argv[1:]
-    for step in (encode_videos, paper, certificate, seal, glyphs):
+    for step in (encode_videos, paper, certificate, seal, glyphs, tail_audio):
         if not only or step.__name__ in only:
             step()
