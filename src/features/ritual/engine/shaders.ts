@@ -124,8 +124,8 @@ void main(){
   col = mix(col, vec3(0.05, 0.02, 0.01), charred * 0.92);
   // infernal letters burning through the paper
   float rune = texture2D(uRuneMap, vUv).r * uRunes;
-  col = mix(col, col*0.45, rune*0.5);
-  vec3 emit = uRuneCol * rune * (0.55 + 0.25*vnoise(vec2(uTime*4.0, vUv.x*30.0)));
+  col = mix(col, col*0.55, rune*0.4);
+  vec3 emit = uRuneCol * rune * (0.3 + 0.18*vnoise(vec2(uTime*4.0, vUv.x*30.0)));
   emit += vec3(1.6, 0.55, 0.12) * emberBand * (1.5 + fbm(vUv*30.0 + uTime*2.0));
   float a = tex.a * uOpacity * alive;
   gl_FragColor = vec4(col * a + emit * uOpacity * (alive + emberBand), a);

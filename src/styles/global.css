@@ -421,6 +421,7 @@ textarea {
   font-family: var(--font-ui);
   font-size: 18px;
   letter-spacing: 0.04em;
+  white-space: nowrap;
   cursor: pointer;
   overflow: hidden;
   backdrop-filter: blur(10px);
@@ -608,7 +609,8 @@ textarea {
     padding: 0 12px;
     font-size: 16px;
   }
-  .cert__actions .btn--primary {
+  .cert__actions .btn--primary,
+  .cert__actions .btn:nth-child(2) {
     flex-basis: 100%;
   }
 }

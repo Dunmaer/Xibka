@@ -130,7 +130,7 @@ export class RitualEngine {
   constructor(private canvas: HTMLCanvasElement, private deck: VideoDeck, private events: EngineEvents = {}) {
     const mobile = matchMedia('(pointer: coarse)').matches || Math.min(screen.width, screen.height) < 700;
     this.quality = mobile
-      ? { dpr: Math.min(devicePixelRatio, 1.5), maxTex: 1024, density: 1300, particles: 500 }
+      ? { dpr: Math.min(devicePixelRatio, 1.5), maxTex: 2048, density: 1700, particles: 500 }
       : { dpr: Math.min(devicePixelRatio, 2), maxTex: 2048, density: 2400, particles: 1000 };
 
     this.renderer = new THREE.WebGLRenderer({
@@ -281,6 +281,11 @@ export class RitualEngine {
       this.layers.push({ art, mesh, mat, angle: (i * 0.7) % (Math.PI * 2), spin: params.spin[i % params.spin.length] });
     });
     this.construct.visible = false;
+    if (import.meta.env.DEV) {
+      // ?layers=foundation,star — show only some layers (to check sync with the video)
+      const only = new URLSearchParams(location.search).get('layers');
+      if (only) for (const l of this.layers) l.mesh.visible = only.split(',').includes(l.art.id);
+    }
 
     const map = new THREE.CanvasTexture(paper.paper);
     map.colorSpace = THREE.NoColorSpace;
@@ -503,7 +508,9 @@ export class RitualEngine {
         u.uTime.value = t;
         const breathe = idle ? 0.08 * Math.sin(t * 1.3 + i) : 0;
         const settle = lerp(1, 0.72, smooth(K.certBirth, K.certSettled, F));
-        u.uIntensity.value = l.art.intensity * (1 + stampHeat * 0.7) * settle * (1 + breathe);
+        // calmer while the camera is deep inside the vortex, so the video stays the hero
+        const deep = 1 - 0.28 * dive * (1 - pull) * (portrait ? 1.3 : 1);
+        u.uIntensity.value = l.art.intensity * (1 + stampHeat * 0.7) * settle * deep * (1 + breathe);
         u.uHeat.value = 0.8 + stampHeat * 0.8 + 0.08 * Math.sin(t * 2 + i);
         // layers rushing past the camera fade out instead of turning into huge blurry blobs
         u.uFade.value = 1 - smooth(1.9, 3.2, this.cam.liftScale(l.mesh.position.z));

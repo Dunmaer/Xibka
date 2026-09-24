@@ -52,7 +52,7 @@ const en = {
   paperName: 'Name',
   paperReason: 'For',
   paperPunishment: 'Punishment',
-  noWebgl: 'Your browser cannot show the full ritual, so here is the result straight away.',
+  noWebgl: 'Your browser cannot show the 3D magic, so the ritual runs in a simplified form.',
 };
 
 export type StringKey = keyof typeof en;
@@ -100,7 +100,7 @@ const ru: Dict = {
   paperName: 'Имя',
   paperReason: 'За что',
   paperPunishment: 'Наказание',
-  noWebgl: 'Браузер не может показать ритуал целиком, поэтому вот сразу результат.',
+  noWebgl: 'Браузер не умеет показывать 3D-магию, поэтому ритуал идёт в упрощённом виде.',
 };
 
 const hy: Dict = {
@@ -145,7 +145,7 @@ const hy: Dict = {
   paperName: 'Անուն',
   paperReason: 'Ինչի համար',
   paperPunishment: 'Պատիժ',
-  noWebgl: 'Ձեր զննարկիչը չի կարող ցույց տալ ամբողջ ծեսը, ուստի ահա միանգամից արդյունքը։',
+  noWebgl: 'Ձեր զննարկիչը չի կարող ցույց տալ 3D մոգությունը, ուստի ծեսն ընթանում է պարզեցված տեսքով։',
 };
 
 export const STRINGS: Record<Lang, Dict> = { en, ru, hy };

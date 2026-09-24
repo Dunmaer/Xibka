@@ -31,7 +31,12 @@ const SOUND_KEY = 'proklinatel.sound';
 const query = new URLSearchParams(location.search);
 const DEBUG_FRAME = query.has('frame') ? Number(query.get('frame')) : null;
 const DEBUG_HUD = query.has('debug') || DEBUG_FRAME !== null;
-const SAMPLE: CurseInput = { name: 'Viktor', reason: 'ate my yoghurt from the office fridge', punishment: 'eternal hiccups' };
+// Sample curses for ?autoplay / ?frame=N (debug only).
+const SAMPLES: Record<Lang, CurseInput> = {
+  en: { name: 'Viktor', reason: 'ate my yoghurt from the office fridge', punishment: 'eternal hiccups' },
+  ru: { name: 'Марина Петровна', reason: 'поставила двойку за опоздание на пять минут', punishment: 'вечная икота по понедельникам' },
+  hy: { name: 'Արամ', reason: 'ուշացավ հանդիպումից', punishment: 'անվերջ զկռտոց' },
+};
 
 export function App() {
   const { t, lang } = useI18n();
@@ -261,7 +266,8 @@ export function App() {
       setWebgl(gl);
       if ((DEBUG_FRAME !== null || query.has('autoplay')) && !debugStarted.current) {
         debugStarted.current = true;
-        const cur: Current = { params: makeRitualParams(SAMPLE), input: SAMPLE, lang, createdAt: Date.now() };
+        const sample = SAMPLES[lang];
+        const cur: Current = { params: makeRitualParams(sample), input: sample, lang, createdAt: Date.now() };
         void runRitual(cur, { save: false });
       }
     },

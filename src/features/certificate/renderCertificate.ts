@@ -241,16 +241,21 @@ export async function renderCertificate(data: CertificateData, scale = 1.5): Pro
   ctx.drawImage(bg, 0, 0, canvas.width, canvas.height);
   ctx.scale(S, S);
 
-  // Faint echo of this ritual's magic circle behind the text.
-  ctx.save();
-  ctx.globalCompositeOperation = 'multiply';
-  ctx.translate((CONTENT.left + CONTENT.right) / 2, 575);
+  // Faint echo of this ritual's magic circle behind the text. Drawn on its own layer first:
+  // the circle art cuts holes (destination-out) that must not punch through the paper.
   const cr = 330;
-  ctx.scale(cr, cr);
-  ctx.strokeStyle = 'rgba(120, 40, 20, 0.16)';
-  ctx.fillStyle = 'rgba(120, 40, 20, 0.16)';
-  ctx.lineCap = 'round';
-  drawFlatCircle(ctx, P, 0.004);
+  const wm = document.createElement('canvas');
+  wm.width = wm.height = Math.ceil(cr * 2.3 * S);
+  const w = wm.getContext('2d')!;
+  w.translate(wm.width / 2, wm.height / 2);
+  w.scale(cr * S, cr * S);
+  w.strokeStyle = w.fillStyle = 'rgb(120, 40, 20)';
+  w.lineCap = 'round';
+  drawFlatCircle(w, P, 0.004);
+  ctx.save();
+  ctx.globalAlpha = 0.16;
+  ctx.globalCompositeOperation = 'multiply';
+  ctx.drawImage(wm, (CONTENT.left + CONTENT.right) / 2 - wm.width / S / 2, 575 - wm.height / S / 2, wm.width / S, wm.height / S);
   ctx.restore();
 
   const cx = (CONTENT.left + CONTENT.right) / 2;
@@ -295,7 +300,7 @@ export async function renderCertificate(data: CertificateData, scale = 1.5): Pro
   y += 22;
 
   // Punishment — the loudest thing on the page
-  const pBottom = 872;
+  const pBottom = 858;
   label(ctx, t.punishmentFieldLabel, cx, y, 18, FONT.label);
   const room = Math.max(60, pBottom - y - 10);
   let pun = fitBlock(ctx, P.input.punishment, maxW, 3, 70, 22, (s) => `700 ${s}px ${FONT.body}`);
@@ -322,12 +327,7 @@ export async function renderCertificate(data: CertificateData, scale = 1.5): Pro
 
   // Date + archive number
   const date = new Date(data.createdAt);
-  let dateStr: string;
-  try {
-    dateStr = new Intl.DateTimeFormat(DATE_LOCALE[lang], { dateStyle: 'long', timeStyle: 'short' }).format(date);
-  } catch {
-    dateStr = date.toLocaleString();
-  }
+  const dateStr = formatDate(date, lang);
   const metaY = 905;
   ctx.font = `600 19px ${FONT.body}`;
   ctx.textAlign = 'left';
@@ -343,6 +343,22 @@ export async function renderCertificate(data: CertificateData, scale = 1.5): Pro
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   await pressSeal(ctx, S, P.seed);
   return canvas;
+}
+
+const HY_MONTHS = [
+  'հունվարի', 'փետրվարի', 'մարտի', 'ապրիլի', 'մայիսի', 'հունիսի',
+  'հուլիսի', 'օգոստոսի', 'սեպտեմբերի', 'հոկտեմբերի', 'նոյեմբերի', 'դեկտեմբերի',
+];
+
+/** Long date + time; Armenian is spelled out by hand because many browsers lack hy-AM data. */
+export function formatDate(date: Date, lang: Lang): string {
+  const hm = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  if (lang === 'hy') return `${date.getFullYear()} թ. ${HY_MONTHS[date.getMonth()]} ${date.getDate()}, ${hm}`;
+  try {
+    return new Intl.DateTimeFormat(DATE_LOCALE[lang], { dateStyle: 'long', timeStyle: 'short' }).format(date);
+  } catch {
+    return date.toLocaleString();
+  }
 }
 
 export function canvasToBlob(canvas: HTMLCanvasElement, type = 'image/png', quality?: number): Promise<Blob> {

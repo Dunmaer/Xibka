@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useI18n } from '../i18n/i18n';
 import { DATE_LOCALE } from '../i18n/strings';
 import type { CurseRecord } from './archiveDb';
@@ -13,10 +13,13 @@ interface Props {
 }
 
 function Thumb({ blob, alt }: { blob?: Blob; alt: string }) {
-  const url = useMemo(() => (blob ? URL.createObjectURL(blob) : null), [blob]);
-  useEffect(() => () => {
-    if (url) URL.revokeObjectURL(url);
-  }, [url]);
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!blob) return;
+    const u = URL.createObjectURL(blob);
+    setUrl(u);
+    return () => URL.revokeObjectURL(u);
+  }, [blob]);
   return url ? <img src={url} alt={alt} loading="lazy" /> : <div className="archive__thumb-empty" aria-hidden="true" />;
 }
 
