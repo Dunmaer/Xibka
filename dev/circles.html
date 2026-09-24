@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Circle gallery (dev)</title>
+  <style>
+    body { margin: 0; background: #0b0706; color: #d9b98a; font: 13px system-ui, sans-serif; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 12px; padding: 12px; }
+    figure { margin: 0; }
+    canvas { width: 100%; height: auto; display: block; background: #120a08; border-radius: 8px; }
+    figcaption { padding: 4px 2px; opacity: .8 }
+  </style>
+</head>
+<body>
+  <div class="grid" id="grid"></div>
+  <script type="module" src="./circles.ts"></script>
+</body>
+</html>

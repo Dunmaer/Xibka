@@ -15,3 +15,9 @@ export_credentials.cfg
 .mono/
 data_*/
 mono_crash.*.json
+
+# Web app
+node_modules/
+dist/
+*.local
+.vite/
