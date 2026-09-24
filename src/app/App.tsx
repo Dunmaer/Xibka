@@ -307,7 +307,8 @@ export function App() {
       setWebgl(gl);
       if ((DEBUG_FRAME !== null || query.has('autoplay')) && !debugStarted.current) {
         debugStarted.current = true;
-        const sample = SAMPLES[lang];
+        // ?name=… swaps the target's name, to look at other circles
+        const sample = query.has('name') ? { ...SAMPLES[lang], name: query.get('name') || SAMPLES[lang].name } : SAMPLES[lang];
         const cur: Current = { params: makeRitualParams(sample), input: sample, lang, createdAt: Date.now() };
         void runRitual(cur, { save: false });
       }

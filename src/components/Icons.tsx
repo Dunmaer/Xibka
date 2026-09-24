@@ -60,3 +60,8 @@ export const IconSkip = () => (
     <path d="M5 5l9 7-9 7V5zM18 5v14" />
   </svg>
 );
+export const IconHeart = () => (
+  <svg {...base}>
+    <path d="M12 20s-7.5-4.6-7.5-10.2A4.2 4.2 0 0 1 12 7.3a4.2 4.2 0 0 1 7.5 2.5C19.5 15.4 12 20 12 20z" />
+  </svg>
+);

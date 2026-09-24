@@ -1,6 +1,7 @@
 import { useI18n } from '../features/i18n/i18n';
 import { LANGS, LANG_NAMES, type Lang } from '../features/i18n/strings';
-import { IconArchive, IconSoundOff, IconSoundOn } from './Icons';
+import { DONATE_URL } from '../config';
+import { IconArchive, IconHeart, IconSoundOff, IconSoundOn } from './Icons';
 
 interface Props {
   sound: boolean;
@@ -47,6 +48,12 @@ export function TopBar({ sound, onToggleSound, archiveCount, onOpenArchive, comp
         >
           {sound ? <IconSoundOn /> : <IconSoundOff />}
         </button>
+        {DONATE_URL && (
+          <a className="iconbtn iconbtn--label iconbtn--donate" href={DONATE_URL} target="_blank" rel="noopener noreferrer" title={t.donateLine} aria-label={t.donateButton}>
+            <IconHeart />
+            <span className="iconbtn__text">{t.donateButton}</span>
+          </a>
+        )}
         <button type="button" className="iconbtn iconbtn--label" onClick={onOpenArchive} title={t.archiveTitle}>
           <IconArchive />
           <span className="iconbtn__text">{t.archiveButton}</span>

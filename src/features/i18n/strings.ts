@@ -53,6 +53,8 @@ const en = {
   paperReason: 'For',
   paperPunishment: 'Punishment',
   noWebgl: 'Your browser cannot show the 3D magic, so the ritual runs in a simplified form.',
+  donateButton: 'Donate',
+  donateLine: 'Enjoyed the ritual? Feed the altar',
 };
 
 export type StringKey = keyof typeof en;
@@ -101,6 +103,8 @@ const ru: Dict = {
   paperReason: 'За что',
   paperPunishment: 'Наказание',
   noWebgl: 'Браузер не умеет показывать 3D-магию, поэтому ритуал идёт в упрощённом виде.',
+  donateButton: 'Поддержать',
+  donateLine: 'Понравился ритуал? Покорми алтарь',
 };
 
 const hy: Dict = {
@@ -146,6 +150,8 @@ const hy: Dict = {
   paperReason: 'Ինչի համար',
   paperPunishment: 'Պատիժ',
   noWebgl: 'Ձեր զննարկիչը չի կարող ցույց տալ 3D մոգությունը, ուստի ծեսն ընթանում է պարզեցված տեսքով։',
+  donateButton: 'Աջակցել',
+  donateLine: 'Հավանեցի՞ք ծեսը։ Կերակրեք զոհասեղանը',
 };
 
 export const STRINGS: Record<Lang, Dict> = { en, ru, hy };

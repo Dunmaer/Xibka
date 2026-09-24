@@ -256,6 +256,13 @@ textarea {
   font-size: 16px;
   letter-spacing: 0.04em;
 }
+.iconbtn--donate {
+  color: #ffb08a;
+  text-decoration: none;
+}
+.iconbtn--donate svg {
+  filter: drop-shadow(0 0 6px rgba(255, 90, 60, 0.55));
+}
 .iconbtn--danger:hover {
   color: #ff8a7a;
 }
@@ -589,6 +596,30 @@ textarea {
   opacity: 1;
   transform: none;
   pointer-events: auto;
+}
+
+.cert__donate {
+  flex-basis: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 6px 0 0;
+  color: var(--ink-dim);
+  font-family: var(--font-ui);
+  font-size: 16px;
+  letter-spacing: 0.03em;
+  text-decoration: none;
+  transition: color 0.2s, text-shadow 0.2s;
+}
+.cert__donate svg {
+  width: 17px;
+  height: 17px;
+  color: #ff8a6a;
+}
+.cert__donate:hover {
+  color: var(--ink);
+  text-shadow: 0 0 14px rgba(255, 120, 70, 0.55);
 }
 
 @media (orientation: portrait) {

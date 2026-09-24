@@ -341,7 +341,9 @@ export class RitualEngine {
       mesh.frustumCulled = false;
       if (only) mesh.visible = only.split(',').includes(art.id);
       this.construct.add(mesh);
-      this.layers.push({ art, tex, mesh, mat, angle: (i * 0.7) % (Math.PI * 2), lockT: 99 });
+      // layers that must not turn on their own (links, bead trails) start at their drawn angle
+      const still = art.spin === 0 || art.follow !== undefined;
+      this.layers.push({ art, tex, mesh, mat, angle: still ? 0 : (i * 0.7) % (Math.PI * 2), lockT: 99 });
     });
     const slots = design.layers.filter((l) => !l.hang).map((l) => l.zSlot);
     this.maxSlot = Math.max(1, ...slots);
@@ -793,6 +795,7 @@ export class RitualEngine {
           y += Math.sin(ga) * a.orbit.r;
           rot += ga + Math.PI / 2;
         }
+        if (a.follow !== undefined) rot += this.groups.get(a.follow)?.angle ?? 0;
         // depth compensation at the end: same picture at rest, real depth under the mouse
         const sRel = D / Math.max(D + lockZ - z, 1e-3);
         const comp = lerp(1, 1 / Math.max(sRel, 0.05), reopen);

@@ -2,10 +2,12 @@
 //
 // A circle is not picked from presets: it is grown from the curse's seed. The generator
 // decides how many tiers there are, where they sit, what architecture the main figure has
-// (star, triangle, rounded heptagon, compound polygons, letters running along its edges ...),
-// whether satellites break out of the frame, blades radiate outward, medallions sit on the
-// cardinal points, and what the ornament of every band is made of. Motifs are assembled
-// from primitives with continuous random parameters, so no two circles repeat.
+// (star, triangle, rounded heptagon, compound polygons, letters running along its edges, a square
+// seal, Metatron's cube, the flower of life, a cube ...), whether big off-centre circles, an axis
+// or a trail of beads break the symmetry, whether satellites break out of the frame (alone or
+// linked into a constellation), blades radiate outward, medallions sit on the cardinal points,
+// and what the ornament of every band is made of. Motifs are assembled from primitives with
+// continuous random parameters, so no two circles repeat.
 //
 // Every layer is drawn into three colour channels (R = structure, G = inscriptions,
 // B = accents); the shader turns them into the curse's own palette.
@@ -52,6 +54,8 @@ export interface LayerArt {
    * around its own centre while the whole group turns with `groupSpin`.
    */
   orbit?: { r: number; a: number; group: number; groupSpin: number };
+  /** Centred layer that turns together with an orbit group (links drawn to its satellites). */
+  follow?: number;
   draw: (p: Pen) => void;
 }
 
@@ -250,6 +254,127 @@ function curvedPoly(p: Pen, n: number, r: number, rot: number, bulge: number, w 
   });
   ctx.closePath();
   ctx.stroke();
+}
+
+function dashLine(p: Pen, x1: number, y1: number, x2: number, y2: number, n: number, fill: number, w = 1, a = 1) {
+  for (let i = 0; i < n; i++) {
+    const t0 = i / n;
+    const t1 = t0 + fill / n;
+    line(p, x1 + (x2 - x1) * t0, y1 + (y2 - y1) * t0, x1 + (x2 - x1) * t1, y1 + (y2 - y1) * t1, w, a);
+  }
+}
+
+/** Small ring with a dot: the node that ends lines in sacred-geometry drawings. */
+function node(p: Pen, x: number, y: number, r: number, filled = false) {
+  p.ctx.save();
+  p.ctx.translate(x, y);
+  disc(p, r);
+  circle(p, r, 1, 1);
+  dot(p, 0, 0, filled ? r * 0.7 : r * 0.35, 1);
+  p.ctx.restore();
+}
+
+/** Crescent moon, horns opening towards +x (rotate to aim it). */
+function crescent(p: Pen, x: number, y: number, r: number, rot: number, thin = 0.4, fill = true, w = 1, alpha = 1) {
+  const { ctx } = p;
+  const r2 = r * (0.95 - thin * 0.15);
+  const dx = r * thin;
+  const xi = (r * r - r2 * r2 + dx * dx) / (2 * dx);
+  const yi = Math.sqrt(Math.max(0, r * r - xi * xi));
+  const t1 = Math.atan2(yi, xi);
+  const t2 = Math.atan2(yi, xi - dx);
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rot);
+  ctx.globalAlpha = alpha;
+  ctx.lineWidth = p.lw * w;
+  ctx.beginPath();
+  ctx.arc(0, 0, r, t1, TAU - t1);
+  ctx.arc(dx, 0, r2, TAU - t2, t2, true);
+  ctx.closePath();
+  if (fill) ctx.fill();
+  else ctx.stroke();
+  ctx.restore();
+}
+
+/** Lotus: pointed petals from the centre, in one or two rows. */
+function lotus(p: Pen, r: number, petals: number, rows: number, w = 1) {
+  const { ctx } = p;
+  ctx.lineWidth = p.lw * w;
+  for (let row = 0; row < rows; row++) {
+    const len = r * (1 - row * 0.3);
+    const half = len * (0.28 + row * 0.06);
+    for (let i = 0; i < petals; i++) {
+      ctx.save();
+      ctx.rotate(((i + row * 0.5) / petals) * TAU);
+      ctx.globalAlpha = 1 - row * 0.2;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.quadraticCurveTo(half, -len * 0.55, 0, -len);
+      ctx.quadraticCurveTo(-half, -len * 0.55, 0, 0);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+}
+
+/** Sun: rays between r0 and r1, straight (alternating long/short) or wavy like flames. */
+function sunRays(p: Pen, r0: number, r1: number, n: number, wavy: boolean) {
+  const { ctx } = p;
+  for (let i = 0; i < n; i++) {
+    const t = (i / n) * TAU;
+    ctx.save();
+    ctx.rotate(t);
+    ctx.globalAlpha = 1;
+    if (wavy) {
+      const l = r1 - r0;
+      const wv = l * 0.14 * (i % 2 ? 1 : -1);
+      ctx.lineWidth = p.lw * 1.1;
+      ctx.beginPath();
+      ctx.moveTo(0, -r0);
+      ctx.bezierCurveTo(wv * 2, -r0 - l * 0.35, -wv * 2, -r0 - l * 0.65, 0, -r1);
+      ctx.stroke();
+    } else {
+      const l = i % 2 ? r0 + (r1 - r0) * 0.55 : r1;
+      const hw = ((TAU * r0) / n) * 0.28;
+      ctx.beginPath();
+      ctx.moveTo(-hw, -r0);
+      ctx.lineTo(0, -l);
+      ctx.lineTo(hw, -r0);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+}
+
+/** Filled ring with letters cut out of it (a dark band of negative lettering). */
+function knockoutRing(p: Pen, r0: number, r1: number, glyphs: number[], fillAlpha: number, ink: Ink = 'c') {
+  const { ctx } = p;
+  p.ink(ink);
+  ctx.globalAlpha = fillAlpha;
+  ctx.beginPath();
+  ctx.arc(0, 0, r1, 0, TAU);
+  ctx.arc(0, 0, r0, 0, TAU, true);
+  ctx.fill('evenodd');
+  p.erase();
+  glyphRing(p, (r0 + r1) / 2, (r1 - r0) * 0.72, glyphs, { sep: 'dot' });
+}
+
+/** Ring of big brush sigils, some of them enclosed in circles (no rails). */
+function sigilRing(p: Pen, rm: number, size: number, rng: Rng) {
+  const n = Math.max(5, Math.round((TAU * rm) / (size * rng.range(2.3, 3.2))));
+  const sigs = Array.from({ length: Math.min(n, 7) }, (_, k) => makeSigil(rng.fork(k), rng.range(0.8, 1.3)));
+  const enclose = rng.pick(['none', 'alt', 'alt', 'some'] as const);
+  around(p, n, rm, (i) => {
+    const boxed = enclose === 'alt' ? i % 2 === 1 : enclose === 'some' ? i % 3 === 0 : false;
+    if (boxed) {
+      disc(p, size);
+      circle(p, size, 0.9, 0.95);
+    }
+    p.ctx.globalAlpha = 1;
+    drawSigil(p.ctx, sigs[i % sigs.length], size * (boxed ? 0.72 : 0.95), 0.9);
+  });
 }
 
 function starPoly(n: number, k: number, r: number, rot: number): [number, number][][] {
@@ -504,36 +629,92 @@ function miniCircle(p: Pen, r: number, rng: Rng, g: GeneratorInput, sigil: Sigil
   circle(p, r, 1.3);
   if (rng.chance(0.6)) circle(p, r * 0.93, 0.6, 0.8);
   const kind = rng();
-  if (kind < 0.55 && detail > 0) {
+  const text = rng.pick([g.reason, g.name, g.punishment]);
+  if (kind < 0.4 && detail > 0) {
     // ring of letters inside the satellite
     const rr = r * rng.range(0.7, 0.8);
     p.ink('b');
-    glyphRing(p, rr, r * 0.2, rng.pick([g.reason, g.name, g.punishment]), { sep: 'dot' });
+    glyphRing(p, rr, r * 0.2, text, { sep: 'dot' });
     p.ink('c');
     circle(p, rr - r * 0.13, 0.7, 0.9);
-  } else if (kind < 0.8) {
+  } else if (kind < 0.54) {
     p.ink('c');
     dashedCircle(p, r * 0.78, rng.int(12, 36), rng.range(0.3, 0.7), 0.8, 0.8);
-  } else {
+  } else if (kind < 0.66) {
     const n = rng.pick([3, 4, 5, 6]);
     p.ink('a');
     for (const loop of starPoly(n * 2, 2, r * 0.8, rng.range(0, TAU))) strokePoly(p, loop, 0.8, 0.9);
+  } else if (kind < 0.8) {
+    // dark band with the letters cut out of it
+    knockoutRing(p, r * 0.62, r * 0.9, detail > 0 ? text : [-1], rng.range(0.3, 0.45));
+    p.ink('c');
+    circle(p, r * 0.62, 0.7, 0.9);
+  } else if (kind < 0.9) {
+    p.ink('c');
+    sunRays(p, r * 0.52, r * 0.86, rng.pick([12, 16, 24]), rng.chance(0.5));
+    circle(p, r * 0.52, 0.8, 0.9);
+  } else {
+    p.ink('c');
+    lotus(p, r * 0.85, rng.pick([6, 8, 12]), rng.int(1, 2), 0.8);
   }
-  // centre: a sigil, a star or a letter
+  if (detail > 1) {
+    // big seals (constellations) get one more tier: a figure between the ring and the centre
+    p.ink('a');
+    const n = rng.pick([3, 4, 6, 6]);
+    const loops = n === 6 ? starPoly(6, 2, r * 0.56, -Math.PI / 2) : [polygonPts(n, r * 0.56, -Math.PI / 2)];
+    for (const loop of loops) strokePoly(p, loop, 0.9, 0.9);
+    circle(p, r * 0.56, 0.6, 0.7);
+  }
+  const lw = p.lw;
+  const k = detail > 1 ? 0.55 : 1;
+  p.ctx.save();
+  p.ctx.scale(k, k);
+  p.lw = lw / k;
+  miniCentre(p, r, rng, g, sigil);
+  p.lw = lw;
+  p.ctx.restore();
+}
+
+function miniCentre(p: Pen, r: number, rng: Rng, g: GeneratorInput, sigil: Sigil) {
+  // centre: a sigil, a star, a letter, a crescent, a cut-out sigil or an eye
   const c = rng();
-  if (c < 0.5) {
+  if (c < 0.36) {
     p.ink('a');
     p.ctx.globalAlpha = 1;
     drawSigil(p.ctx, sigil, r * 0.42, 1);
-  } else if (c < 0.75) {
+  } else if (c < 0.52) {
     p.ink('a');
     const n = rng.pick([5, 6, 7]);
     for (const loop of starPoly(n, n === 6 ? 2 : Math.floor(n / 2), r * 0.45, -Math.PI / 2)) strokePoly(p, loop, 0.9, 1);
-  } else {
+  } else if (c < 0.68) {
     p.ink('b');
     p.ctx.globalAlpha = 1;
     const seq = g.name.filter((x) => x >= 0);
     drawGlyph(p.ctx, seq.length ? rng.pick(seq) : 0, r * 0.7);
+  } else if (c < 0.8) {
+    p.ink('a');
+    crescent(p, 0, 0, r * 0.4, rng.pick([0, -Math.PI / 2, Math.PI / 2]), rng.range(0.35, 0.55));
+  } else if (c < 0.92) {
+    // a filled seal with the sigil cut out of it
+    p.ink('c');
+    p.ctx.globalAlpha = rng.range(0.45, 0.65);
+    p.ctx.beginPath();
+    p.ctx.arc(0, 0, r * 0.5, 0, TAU);
+    p.ctx.fill();
+    p.erase();
+    p.ctx.globalAlpha = 1;
+    drawSigil(p.ctx, sigil, r * 0.38, 1.1);
+  } else {
+    p.ink('a');
+    const e = r * 0.42;
+    p.ctx.globalAlpha = 1;
+    p.ctx.lineWidth = p.lw;
+    p.ctx.beginPath();
+    p.ctx.moveTo(-e, 0);
+    p.ctx.quadraticCurveTo(0, -e * 0.8, e, 0);
+    p.ctx.quadraticCurveTo(0, e * 0.8, -e, 0);
+    p.ctx.stroke();
+    dot(p, 0, 0, e * 0.25, 1);
   }
 }
 
@@ -583,7 +764,7 @@ export function generateCircle(g: GeneratorInput): CircleDesign {
 
   /** A group of small circles on an orbit, each its own layer (so each can spin by itself). */
   const addOrbitGroup = (
-    id: string, group: number, orbitR: number, size: number, angles: number[], intensity: number,
+    id: string, group: number, orbitR: number, size: number | number[], angles: number[], intensity: number,
     drawOne: (p: Pen, i: number) => void,
   ) => {
     const gr = rng.fork(3000 + group);
@@ -593,7 +774,8 @@ export function generateCircle(g: GeneratorInput): CircleDesign {
       const sr = gr.fork(i);
       // some spin briskly on their own axis, the others barely move
       const spin = (sr.chance(0.55) ? sr.range(0.35, 0.9) : sr.range(0.03, 0.12)) * sr.sign();
-      addLayer(`${id}${i}`, size * 1.04, intensity, (p) => drawOne(p, i), {
+      const sz = Array.isArray(size) ? size[i] : size;
+      addLayer(`${id}${i}`, sz * 1.04, intensity, (p) => drawOne(p, i), {
         orbit: { r: orbitR, a, group, groupSpin },
         spin,
         zSlot: baseSlot + sr.range(-0.6, 0.6),
@@ -605,8 +787,10 @@ export function generateCircle(g: GeneratorInput): CircleDesign {
   {
     const fr = rng.fork(11);
     const style = fr.int(0, 3);
-    const bandH = fr.range(0.06, 0.13);
-    const bigLetters = fr.chance(0.4);
+    const tr = fr();
+    // letters around the band, few big letters, a ring of brush sigils, or a dark band with cut-out letters
+    const textStyle = tr < 0.42 ? 'ring' : tr < 0.7 ? 'big' : tr < 0.85 ? 'sigils' : 'knockout';
+    const bandH = textStyle === 'sigils' ? fr.range(0.1, 0.14) : fr.range(0.06, 0.13);
     const blades = fr.chance(0.35);
     const ticks = fr.chance(0.4);
     const arcs = fr.chance(0.55);
@@ -626,7 +810,12 @@ export function generateCircle(g: GeneratorInput): CircleDesign {
     addLayer('frameText', r1 + 0.02, 0.9, (p) => {
       const r = dt();
       p.ink('b');
-      if (bigLetters) {
+      if (textStyle === 'sigils') {
+        p.ink(r.chance(0.5) ? 'a' : 'c');
+        sigilRing(p, (r0 + r1) / 2, bandH * 0.42, r);
+      } else if (textStyle === 'knockout') {
+        knockoutRing(p, r0 + 0.006, r1 - 0.006, text(g.name, g.reason), r.range(0.26, 0.38));
+      } else if (textStyle === 'big') {
         // few, big letters with separators (like the old grimoires)
         const n = r.pick([6, 8, 10, 12]);
         const seq = text(g.name, g.punishment).filter((x) => x >= 0);
@@ -699,34 +888,109 @@ export function generateCircle(g: GeneratorInput): CircleDesign {
   // ---------- 2. Satellites (often breaking out of the frame), each spinning on its own
   if (rng.chance(0.8)) {
     const sr = rng.fork(22);
-    const k = sr.pick([2, 3, 3, 4, 4, 5, 6, 7, 8]);
-    const orbit = sr.range(0.78, 1.12);
-    const size = Math.min(0.34, sr.range(0.12, 0.3) * (k <= 4 ? 1.25 : 0.85));
-    const irregular = sr.chance(0.2);
+    // ring: evenly on an orbit; trinity: a few big seals joined to the centre and to each other
+    // (a constellation of circles); scatter: uneven sizes and gaps, the symmetry is broken
+    const mode = sr.pick(['ring', 'ring', 'ring', 'trinity', 'scatter', 'scatter'] as const);
+    const k = mode === 'trinity' ? sr.pick([2, 3, 3, 4]) : mode === 'scatter' ? sr.int(3, 6) : sr.pick([2, 3, 3, 4, 4, 5, 6, 7, 8]);
+    const orbit = mode === 'trinity' ? sr.range(0.98, 1.1) : sr.range(0.78, 1.12);
+    const base = mode === 'trinity' ? sr.range(0.27, 0.36) : Math.min(0.34, sr.range(0.12, 0.3) * (k <= 4 ? 1.25 : 0.85));
     const phase = sr.range(0, TAU);
-    const angles = Array.from({ length: k }, (_, i) => phase + (i / k) * TAU + (irregular ? sr.range(-0.3, 0.3) : 0));
+    const jitter = mode === 'scatter' ? 0.32 : sr.chance(0.2) ? 0.3 / Math.max(1, k / 4) : 0;
+    const angles = Array.from({ length: k }, (_, i) => phase + ((i + (jitter ? sr.range(-jitter, jitter) : 0)) / k) * TAU);
+    const sizes = angles.map(() => (mode === 'scatter' ? base * sr.range(0.5, 1.25) : base));
+    // uneven neighbours may touch but must not swallow each other
+    const chord = (i: number, j: number) => 2 * orbit * Math.abs(Math.sin((angles[j] - angles[i]) / 2));
+    if (k > 1) sizes.forEach((sz, i) => (sizes[i] = Math.min(sz, 0.52 * Math.min(chord(i, (i + 1) % k), chord(i, (i + k - 1) % k)))));
     if (sr.chance(0.5)) {
       addLayer('satOrbit', orbit + 0.02, 0.6, (p) => {
         p.ink('a');
         circle(p, orbit, 0.5, 0.5);
       });
     }
-    addOrbitGroup('sat', 1, orbit, size, angles, 0.9, (p, i) => miniCircle(p, size, sr.fork(i), g, sigils[1 + (i % 4)], 1));
+    if (mode === 'trinity' || sr.chance(0.4)) {
+      // links from the heart of the circle to every satellite (and between them): they turn with the group
+      const style = mode === 'trinity' ? sr.pick(['bars', 'bars+chain', 'lines+chain'] as const) : sr.pick(['bars', 'lines', 'lines', 'chain'] as const);
+      const inner = sr.range(0.26, 0.5);
+      const dl = fresh(23);
+      addLayer('satLinks', orbit + base * 0.3, 0.8, (p) => {
+        const r = dl();
+        angles.forEach((a, i) => {
+          const cx = Math.cos(a);
+          const cy = Math.sin(a);
+          const end = orbit - sizes[i];
+          if (style.startsWith('bars')) {
+            // double rail with the words running between
+            const hw = Math.max(0.018, sizes[i] * 0.13);
+            const nx = -cy * hw;
+            const ny = cx * hw;
+            p.ink('a');
+            line(p, cx * inner + nx, cy * inner + ny, cx * end + nx, cy * end + ny, 1, 0.95);
+            line(p, cx * inner - nx, cy * inner - ny, cx * end - nx, cy * end - ny, 1, 0.95);
+            p.ink('b');
+            glyphLine(p, cx * inner, cy * inner, cx * end, cy * end, hw * 1.35, words[i % 3]);
+            p.ink('c');
+            dot(p, cx * inner, cy * inner, hw * 0.7, 1);
+          } else if (style.startsWith('lines')) {
+            p.ink('a');
+            line(p, cx * inner, cy * inner, cx * end, cy * end, 0.9, 0.9);
+            p.ink('c');
+            node(p, cx * inner, cy * inner, 0.016);
+            const m = (inner + end) / 2;
+            line(p, cx * m - cy * 0.03, cy * m + cx * 0.03, cx * m + cy * 0.03, cy * m - cx * 0.03, 0.9, 0.9);
+          }
+        });
+        if (style.endsWith('chain')) {
+          // the satellites joined to each other rim to rim
+          p.ink('a');
+          const pairs = k === 2 ? 1 : k;
+          for (let i = 0; i < pairs; i++) {
+            const j = (i + 1) % k;
+            const [x0, y0] = polar(orbit, angles[i]);
+            const [x1, y1] = polar(orbit, angles[j]);
+            const len = Math.hypot(x1 - x0, y1 - y0);
+            if (len < sizes[i] + sizes[j] + 0.04) continue;
+            const ux = (x1 - x0) / len;
+            const uy = (y1 - y0) / len;
+            const ax = x0 + ux * sizes[i];
+            const ay = y0 + uy * sizes[i];
+            const bx = x1 - ux * sizes[j];
+            const by = y1 - uy * sizes[j];
+            if (r.chance(0.5)) {
+              line(p, ax, ay, bx, by, 1, 0.9);
+            } else {
+              const o = 0.012;
+              line(p, ax - uy * o, ay + ux * o, bx - uy * o, by + ux * o, 0.8, 0.9);
+              line(p, ax + uy * o, ay - ux * o, bx + uy * o, by - ux * o, 0.8, 0.9);
+            }
+          }
+        }
+      }, { follow: 1, spin: 0 });
+    }
+    addOrbitGroup('sat', 1, orbit, sizes, angles, 0.9, (p, i) =>
+      miniCircle(p, sizes[i], sr.fork(i), g, sigils[1 + (i % 4)], sizes[i] > 0.26 ? 2 : sizes[i] > 0.09 ? 1 : 0));
   }
 
   // ---------- 3. Main figure — varied architecture
   let figure = '';
+  const fr = rng.fork(33);
+  const figKind = fr.pick(['star', 'star', 'star', 'polygon', 'compound', 'compound', 'rounded', 'concave', 'glyphEdges',
+    'glyphEdges', 'nested', 'triangle', 'square', 'square', 'metatron', 'flower', 'cube'] as const);
+  const figR = figKind === 'square' ? fr.range(0.74, 0.86) : fr.range(0.6, 0.86);
+  const figRot = figKind === 'square' ? (fr.chance(0.55) ? -Math.PI / 4 : -Math.PI / 2)
+    : -Math.PI / 2 + (fr.chance(0.3) ? Math.PI / fr.int(3, 9) : 0);
+  const figN = figKind === 'triangle' ? 3 : figKind === 'square' ? 4 : figKind === 'metatron' || figKind === 'cube' || figKind === 'flower' ? 6
+    : fr.int(figKind === 'star' ? 5 : 3, figKind === 'star' ? 12 : 9);
   {
-    const fr = rng.fork(33);
-    const R = fr.range(0.6, 0.86);
-    const rot = -Math.PI / 2 + (fr.chance(0.3) ? Math.PI / fr.int(3, 9) : 0);
-    const kind = fr.pick(['star', 'star', 'polygon', 'compound', 'rounded', 'concave', 'glyphEdges', 'nested', 'triangle'] as const);
-    const n = kind === 'triangle' ? 3 : fr.int(kind === 'star' ? 5 : 3, kind === 'star' ? 12 : 9);
+    const kind = figKind;
+    const R = figR;
+    const rot = figRot;
+    const n = figN;
     const k = Math.max(2, Math.min(Math.floor((n - 1) / 2), fr.int(2, 4)));
-    const vertexDecor = fr.pick(['none', 'dots', 'rings', 'medallions', 'medallions', 'spokes'] as const);
+    const vertexDecor = fr.pick(['none', 'dots', 'rings', 'medallions', 'medallions', 'spokes', 'nodes', 'nodes'] as const);
     figure = `${kind}-${n}`;
     const df = fresh(34);
-    addLayer('figure', R * 1.12, 1, (p) => {
+    const layerR = Math.max(R * (kind === 'metatron' ? 1.3 : 1.12), R + 0.11);
+    addLayer('figure', layerR, 1, (p) => {
       const r = df();
       p.ink('a');
       const pts = polygonPts(n, R, rot);
@@ -786,9 +1050,144 @@ export function generateCircle(g: GeneratorInput): CircleDesign {
           }
           break;
         }
+        case 'square': {
+          // a square seal: the words run along the four sides, cells in the corners
+          p.ctx.save();
+          p.ctx.rotate(rot + Math.PI / 4);
+          const S = R / Math.SQRT2;
+          const bw = S * r.range(0.16, 0.24);
+          const Si = S - bw;
+          const sq = (h: number, w = 1, a = 1) => strokePoly(p, [[-h, -h], [h, -h], [h, h], [-h, h]], w, a);
+          sq(S, 1.6);
+          sq(Si, 1.1);
+          if (r.chance(0.4)) sq(S + 0.018, 0.5, 0.7);
+          const cells = r.pick(['box', 'box', 'box', 'none'] as const);
+          const sides: [number, number, number, number][] = [
+            [-Si, -(S - bw / 2), Si, -(S - bw / 2)], [S - bw / 2, -Si, S - bw / 2, Si],
+            [Si, S - bw / 2, -Si, S - bw / 2], [-(S - bw / 2), Si, -(S - bw / 2), -Si],
+          ];
+          sides.forEach(([x1, y1, x2, y2], i) => {
+            p.ink('b');
+            const pad = cells === 'none' ? 0 : bw * 0.1;
+            const dx = Math.sign(x2 - x1) * pad;
+            const dy = Math.sign(y2 - y1) * pad;
+            glyphLine(p, x1 + dx, y1 + dy, x2 - dx, y2 - dy, bw * 0.62, words[i % 3]);
+          });
+          if (cells === 'box') {
+            const inside = r.pick(['dot', 'glyph', 'sigil', 'node'] as const);
+            const seq = g.name.filter((x) => x >= 0);
+            for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]] as const) {
+              p.ink('a');
+              line(p, sx * Si, sy * Si, sx * Si, sy * S, 1, 1);
+              line(p, sx * Si, sy * Si, sx * S, sy * Si, 1, 1);
+              const cx = sx * (S - bw / 2);
+              const cy = sy * (S - bw / 2);
+              p.ink('c');
+              if (inside === 'dot') dot(p, cx, cy, bw * 0.16, 1);
+              else if (inside === 'node') node(p, cx, cy, bw * 0.25);
+              else {
+                p.ctx.save();
+                p.ctx.translate(cx, cy);
+                p.ctx.globalAlpha = 1;
+                if (inside === 'glyph') drawGlyph(p.ctx, seq.length ? seq[(sx + 1 + (sy + 1) * 2) % seq.length] : 0, bw * 0.62);
+                else drawSigil(p.ctx, sigils[(sx + 1 + (sy + 1)) % sigils.length], bw * 0.34, 1);
+                p.ctx.restore();
+              }
+            }
+          }
+          p.ink('a');
+          const inner = r.pick(['diamond', 'diamondCircle', 'circle', 'window', 'diagonals'] as const);
+          if (inner === 'diamond' || inner === 'diamondCircle') strokePoly(p, [[0, -Si], [Si, 0], [0, Si], [-Si, 0]], 1.1, 1);
+          if (inner === 'diamondCircle' || inner === 'circle') circle(p, inner === 'circle' ? Si : Si / Math.SQRT2, 0.9, 0.9);
+          if (inner === 'window') {
+            const c = Si * r.range(0.22, 0.34);
+            line(p, 0, -Si, 0, -c, 0.9, 0.9);
+            line(p, 0, Si, 0, c, 0.9, 0.9);
+            line(p, -Si, 0, -c, 0, 0.9, 0.9);
+            line(p, Si, 0, c, 0, 0.9, 0.9);
+            sq(c, 1, 1);
+          }
+          if (inner === 'diagonals') {
+            line(p, -Si, -Si, -Si * 0.35, -Si * 0.35, 0.8, 0.8);
+            line(p, Si, Si, Si * 0.35, Si * 0.35, 0.8, 0.8);
+            line(p, Si, -Si, Si * 0.35, -Si * 0.35, 0.8, 0.8);
+            line(p, -Si, Si, -Si * 0.35, Si * 0.35, 0.8, 0.8);
+            circle(p, Si * 0.5, 0.9, 0.9);
+          }
+          p.ctx.restore();
+          break;
+        }
+        case 'metatron': {
+          // Metatron's cube: thirteen circles and the lines that join their centres
+          const d = R / 2;
+          const c13: [number, number][] = [[0, 0], ...polygonPts(6, d, rot), ...polygonPts(6, 2 * d, rot)];
+          if (r.chance(0.6)) {
+            for (let i = 1; i < 13; i++) for (let j = i + 1; j < 13; j++) line(p, c13[i][0], c13[i][1], c13[j][0], c13[j][1], 0.55, 0.38);
+          } else {
+            for (const loop of starPoly(6, 2, 2 * d, rot)) strokePoly(p, loop, 0.9, 0.9);
+            for (const loop of starPoly(6, 2, d, rot)) strokePoly(p, loop, 0.7, 0.7);
+            strokePoly(p, polygonPts(6, 2 * d, rot), 0.9, 0.8);
+          }
+          const cr = d * r.range(0.46, 0.5);
+          c13.forEach(([x, y], i) => {
+            if (i === 0) return;
+            p.ctx.save();
+            p.ctx.translate(x, y);
+            circle(p, cr, 1, 1);
+            p.ctx.restore();
+          });
+          break;
+        }
+        case 'flower': {
+          // flower (or seed) of life, cut by its circle
+          const rings = r.chance(0.45) ? 1 : 2;
+          const rho = R / (rings + 1);
+          const outer = r.chance(0.5) ? 1 : 0; // the cut arcs of the next ring, like the real flower of life
+          const { ctx } = p;
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(0, 0, R, 0, TAU);
+          ctx.clip();
+          ctx.rotate(rot);
+          ctx.globalAlpha = 0.9;
+          ctx.lineWidth = p.lw * 0.9;
+          for (let a = -rings - 1; a <= rings + 1; a++) {
+            for (let b = -rings - 1; b <= rings + 1; b++) {
+              const hex = (Math.abs(a) + Math.abs(b) + Math.abs(a + b)) / 2;
+              if (hex > rings + outer || hex === 0) continue;
+              ctx.beginPath();
+              ctx.arc(rho * (a + b / 2), (rho * b * Math.sqrt(3)) / 2, rho, 0, TAU);
+              ctx.stroke();
+            }
+          }
+          ctx.restore();
+          circle(p, R, 1.5, 1);
+          circle(p, R * 0.97, 0.6, 0.7);
+          break;
+        }
+        case 'cube': {
+          // a cube seen along its diagonal: the near corner in solid lines, the far one dashed
+          strokePoly(p, pts, 1.6, 1);
+          const h0 = R * 0.3;
+          for (let i = 0; i < 6; i++) {
+            const [x, y] = pts[i];
+            const l = Math.hypot(x, y);
+            if (i % 2) line(p, (x / l) * h0, (y / l) * h0, x, y, 1.2, 1);
+            else dashLine(p, (x / l) * h0, (y / l) * h0, x, y, 8, 0.55, 0.8, 0.7);
+          }
+          if (r.chance(0.5)) {
+            const inner = polygonPts(6, R * 0.5, rot);
+            strokePoly(p, inner, 0.9, 0.85);
+            pts.forEach(([x, y], i) => line(p, x, y, inner[i][0], inner[i][1], 0.6, 0.6));
+          } else {
+            for (const loop of starPoly(6, 2, R, rot)) strokePoly(p, loop, 0.6, 0.45);
+            circle(p, R * Math.cos(Math.PI / 6), 0.8, 0.8);
+          }
+          break;
+        }
       }
-      if (r.chance(0.55)) circle(p, R, 0.8, 0.8);
-      if (r.chance(0.4)) circle(p, R * Math.cos(Math.PI / n) * 0.98, 0.6, 0.6);
+      if (kind !== 'flower' && r.chance(0.55)) circle(p, R, 0.8, 0.8);
+      if (kind !== 'square' && kind !== 'flower' && r.chance(0.4)) circle(p, R * Math.cos(Math.PI / n) * 0.98, 0.6, 0.6);
       pts.forEach(([x, y]) => {
         p.ctx.save();
         p.ctx.translate(x, y);
@@ -800,6 +1199,13 @@ export function generateCircle(g: GeneratorInput): CircleDesign {
           p.ink('c');
           circle(p, 0.035, 1);
           dot(p, 0, 0, 0.01, 1);
+        } else if (vertexDecor === 'nodes') {
+          // a node on the corner and a short stub pointing out of it
+          const l = Math.hypot(x, y) || 1;
+          p.ink('c');
+          node(p, 0, 0, 0.022);
+          line(p, (x / l) * 0.024, (y / l) * 0.024, (x / l) * 0.075, (y / l) * 0.075, 0.9, 0.9);
+          dot(p, (x / l) * 0.085, (y / l) * 0.085, 0.008, 1);
         }
         p.ctx.restore();
         if (vertexDecor === 'spokes') {
@@ -810,10 +1216,93 @@ export function generateCircle(g: GeneratorInput): CircleDesign {
     });
     if (vertexDecor === 'medallions') {
       // medallions on the vertices: separate little circles that spin by themselves
-      const size = fr.range(0.06, 0.1);
+      const size = n <= 4 ? fr.range(0.11, 0.17) : fr.range(0.06, 0.1);
       const angles = Array.from({ length: n }, (_, i) => rot + (i / n) * TAU);
-      addOrbitGroup('vtx', 3, R, size, angles, 1, (p, i) => miniCircle(p, size, fr.fork(i), g, sigils[5 + (i % 3)], 0));
+      addOrbitGroup('vtx', 3, R, size, angles, 1, (p, i) => miniCircle(p, size, fr.fork(i), g, sigils[5 + (i % 3)], size > 0.1 ? 1 : 0));
     }
+  }
+
+  // ---------- 3b. Eccentric circles: big circles off the centre — on the corners of the figure,
+  // passing through the centre, crossing orbits, or simply placed off balance
+  if (rng.chance(0.55)) {
+    const wr = rng.fork(36);
+    const mode = wr.pick(['vertex', 'vertex', 'offset', 'offset', 'offset', 'rosette', 'orbits'] as const);
+    const dw = fresh(37);
+    addLayer('weave', 1.16, 0.75, (p) => {
+      const r = dw();
+      p.ink(r.chance(0.6) ? 'a' : 'c');
+      const { ctx } = p;
+      if (mode === 'vertex') {
+        const every = figN > 6 ? 2 : 1;
+        const rho = Math.min(1.12 - figR, figR * r.range(0.45, 0.8));
+        const twin = r.chance(0.45);
+        polygonPts(figN, figR, figRot).forEach(([x, y], i) => {
+          if (i % every) return;
+          ctx.save();
+          ctx.translate(x, y);
+          circle(p, rho, 1, 0.9);
+          if (twin) circle(p, rho * 0.92, 0.5, 0.6);
+          ctx.restore();
+        });
+      } else if (mode === 'offset') {
+        const count = r.int(2, 3);
+        for (let c = 0; c < count; c++) {
+          const t = r.range(0, TAU);
+          const d = r.range(0.14, 0.42);
+          const rho = Math.min(1.1 - d, r.range(0.38, 0.7));
+          ctx.save();
+          ctx.translate(Math.cos(t) * d, Math.sin(t) * d);
+          ctx.rotate(r.range(0, TAU));
+          p.ink('a');
+          circle(p, rho, 1.2, 1);
+          if (r.chance(0.55)) {
+            // an inscription running along the eccentric circle
+            const h = r.range(0.035, 0.05);
+            circle(p, rho - h, 0.6, 0.8);
+            p.ink('b');
+            glyphRing(p, rho - h / 2, h * 0.9, words[c % 3], { sep: 'dot', a: 0.9 });
+          } else if (r.chance(0.5)) {
+            p.ink('c');
+            dashedCircle(p, rho - 0.02, r.int(30, 80), 0.45, 0.7, 0.8);
+          }
+          p.ink('c');
+          const [nx, ny] = polar(rho, r.range(0, TAU));
+          node(p, nx, ny, 0.02, r.chance(0.5));
+          ctx.restore();
+        }
+      } else if (mode === 'rosette') {
+        const n = r.pick([3, 4, 5, 6, 8]);
+        const rho = r.range(0.3, 0.5);
+        const ph = r.range(0, TAU);
+        for (let i = 0; i < n; i++) {
+          const [x, y] = polar(rho, ph + (i / n) * TAU);
+          ctx.save();
+          ctx.translate(x, y);
+          circle(p, rho, 0.9, 0.85);
+          ctx.restore();
+        }
+        circle(p, rho * 2, 0.7, 0.6);
+      } else {
+        const n = r.int(2, 4);
+        const A = r.range(0.72, 1.05);
+        const B = A * r.range(0.22, 0.42);
+        const ph = r.range(0, TAU);
+        for (let i = 0; i < n; i++) {
+          ctx.save();
+          ctx.rotate(ph + (i / n) * Math.PI);
+          ctx.globalAlpha = 0.9;
+          ctx.lineWidth = p.lw;
+          ctx.beginPath();
+          ctx.ellipse(0, 0, A, B, 0, 0, TAU);
+          ctx.stroke();
+          const e = r.range(0, TAU);
+          p.ink('c');
+          node(p, Math.cos(e) * A, Math.sin(e) * B, 0.022, true);
+          p.ink('a');
+          ctx.restore();
+        }
+      }
+    });
   }
 
   // ---------- 4. Bands (1..3), each with a freshly grown ornament
@@ -821,20 +1310,58 @@ export function generateCircle(g: GeneratorInput): CircleDesign {
     const br = rng.fork(44);
     const bands = br.int(1, 3);
     let top = br.range(0.6, 0.74);
+    // inside a square seal the rings sit within its inner square
+    if (figKind === 'square') top = Math.min(top, (figR / Math.SQRT2) * 0.74);
     for (let b = 0; b < bands && top > 0.3; b++) {
-      const h = br.range(0.045, 0.1);
+      const kind = br();
+      // glyph ring | dark band with cut-out letters | ring of sigils | beads | ornament
+      const type = kind < 0.28 ? 'glyphs' : kind < 0.4 ? 'knockout' : kind < 0.52 ? 'sigils' : kind < 0.6 ? 'beads' : 'motif';
+      const h = type === 'sigils' ? br.range(0.075, 0.11) : br.range(0.045, 0.1);
       const r1 = top;
       const r0 = r1 - h;
-      const kind = br();
       const db = fresh(4400 + b);
       addLayer(`band${b}`, r1 + 0.02, 0.85, (p) => {
         const lrng = db();
-        if (kind < 0.35) {
+        const rm = (r0 + r1) / 2;
+        if (type === 'glyphs') {
           p.ink('b');
-          glyphRing(p, (r0 + r1) / 2, h, text(words[(b + 2) % 3], words[b % 3]), { sep: lrng.pick(['dot', 'diamond', 'bar', 'none'] as const) });
+          glyphRing(p, rm, h, text(words[(b + 2) % 3], words[b % 3]), { sep: lrng.pick(['dot', 'diamond', 'bar', 'none'] as const) });
           p.ink('a');
           circle(p, r0, 0.9);
           circle(p, r1, 0.9);
+        } else if (type === 'knockout') {
+          knockoutRing(p, r0, r1, text(words[(b + 1) % 3], words[b % 3]), lrng.range(0.26, 0.4));
+          p.ink('a');
+          circle(p, r0, 0.9);
+          circle(p, r1, 0.9);
+        } else if (type === 'sigils') {
+          p.ink(lrng.chance(0.6) ? 'a' : 'c');
+          sigilRing(p, rm, h * 0.42, lrng);
+          if (lrng.chance(0.5)) {
+            p.ink('a');
+            circle(p, r0, 0.6, 0.7);
+            circle(p, r1, 0.6, 0.7);
+          }
+        } else if (type === 'beads') {
+          // a string of small circles, each holding a letter, a dot or a moon
+          const q = h * 0.4;
+          const n = Math.max(8, Math.floor((TAU * rm) / (q * 2.3)));
+          const seq = words[b % 3].filter((x) => x >= 0);
+          const inside = lrng.pick(['glyph', 'glyph', 'dot', 'moon'] as const);
+          p.ink('a');
+          circle(p, rm, 0.6, 0.7);
+          around(p, n, rm, (i) => {
+            disc(p, q);
+            p.ink('c');
+            circle(p, q, 0.9, 1);
+            p.ctx.globalAlpha = 1;
+            if (inside === 'glyph') {
+              p.ink('b');
+              drawGlyph(p.ctx, seq.length ? seq[i % seq.length] : i, q * 1.3);
+            } else if (inside === 'dot') dot(p, 0, 0, q * 0.35, 1);
+            else crescent(p, 0, 0, q * 0.6, -Math.PI / 2 + (i % 2) * Math.PI, 0.45);
+            p.ink('a');
+          });
         } else {
           p.ink(lrng.chance(0.7) ? 'a' : 'c');
           motifBand(p, r0, r1, lrng, words[b % 3], sigils[2 + b]);
@@ -929,11 +1456,19 @@ export function generateCircle(g: GeneratorInput): CircleDesign {
   {
     const cr = rng.fork(77);
     const R = cr.range(0.13, 0.26);
-    const kind = cr.pick(['sigil', 'sigil', 'spiral', 'letter', 'eye'] as const);
+    const kind = cr.pick(['sigil', 'sigil', 'spiral', 'letter', 'eye', 'crescent', 'sun', 'lotus', 'eyeTri', 'bigSigil', 'bigSigil'] as const);
     const thick = cr.chance(0.4);
     const dc = fresh(78);
-    addLayer('core', R + 0.03, 1.1, (p) => {
+    // a big brush sigil needs no seal around it: it stands alone in the middle of the circle
+    const big = kind === 'bigSigil';
+    addLayer('core', big ? R * 1.9 + 0.05 : R + 0.03, 1.1, (p) => {
       const r = dc();
+      if (big) {
+        p.ink('c');
+        p.ctx.globalAlpha = 1;
+        drawSigil(p.ctx, sigils[0], R * 1.8, 0.85);
+        return;
+      }
       disc(p, R);
       p.ink('a');
       if (thick) {
@@ -980,6 +1515,39 @@ export function generateCircle(g: GeneratorInput): CircleDesign {
         p.ink('b');
         const first = g.name.find((x) => x >= 0) ?? 0;
         drawGlyph(p.ctx, first, e * 1.5);
+      } else if (kind === 'crescent') {
+        // a moon holding a small star (or a dot)
+        p.ink('c');
+        crescent(p, 0, 0, e * 0.95, -Math.PI / 2 + (r.chance(0.3) ? Math.PI : 0), r.range(0.35, 0.5), true, 1, 0.7);
+        p.ink('a');
+        if (r.chance(0.6)) for (const loop of starPoly(5, 2, e * 0.3, -Math.PI / 2)) strokePoly(p, loop, 0.9, 1);
+        else dot(p, 0, 0, e * 0.12, 1);
+      } else if (kind === 'sun') {
+        p.ink('c');
+        sunRays(p, e * 0.48, e * 1.02, r.pick([12, 16, 20, 24]), r.chance(0.5));
+        circle(p, e * 0.48, 1.2, 1);
+        p.ink('a');
+        drawSigil(p.ctx, sigils[0], e * 0.32, 1);
+      } else if (kind === 'lotus') {
+        p.ink('c');
+        lotus(p, e, r.pick([6, 8, 10, 12]), r.int(1, 2), 1);
+        p.ink('a');
+        circle(p, e * 0.18, 1, 1);
+        dot(p, 0, 0, e * 0.07, 1);
+      } else if (kind === 'eyeTri') {
+        // the eye inside a triangle, with short rays around it
+        p.ink('a');
+        const tri = polygonPts(3, e * 1.05, -Math.PI / 2);
+        strokePoly(p, tri, 1.3, 1);
+        p.ink('c');
+        const s = e * 0.42;
+        p.ctx.lineWidth = p.lw * 1.1;
+        p.ctx.beginPath();
+        p.ctx.moveTo(-s, e * 0.12);
+        p.ctx.quadraticCurveTo(0, e * 0.12 - s * 0.75, s, e * 0.12);
+        p.ctx.quadraticCurveTo(0, e * 0.12 + s * 0.75, -s, e * 0.12);
+        p.ctx.stroke();
+        dot(p, 0, e * 0.12, s * 0.26, 1);
       } else {
         p.ink('c');
         p.ctx.lineWidth = p.lw * 1.3;
@@ -990,7 +1558,140 @@ export function generateCircle(g: GeneratorInput): CircleDesign {
         p.ctx.stroke();
         dot(p, 0, 0, e * 0.25, 1);
       }
-    });
+    }, {}, R + 0.03);
+  }
+
+  // ---------- 7b. Axis: a line through the whole circle with stations on it, breaking out of the
+  // frame at both ends (mirror symmetry only, the two ends differ)
+  if (rng.chance(0.3)) {
+    const ar = rng.fork(79);
+    const reach = ar.range(1.15, 1.4);
+    const cross = ar.chance(0.45);
+    const crossReach = ar.range(0.95, 1.2);
+    const tilt = ar.chance(0.6) ? 0 : ar.range(0, TAU);
+    const da = fresh(80);
+    addLayer('axis', reach + 0.1, 0.85, (p) => {
+      const r = da();
+      const { ctx } = p;
+      ctx.rotate(tilt);
+      const hole = r.range(0.2, 0.3); // keeps the core clear
+      const dbl = r.chance(0.4);
+      p.ink('a');
+      for (const s of [-1, 1]) {
+        const y0 = s * hole;
+        const y1 = s * reach * 0.9;
+        if (dbl) {
+          line(p, -0.011, y0, -0.011, y1, 0.8, 0.95);
+          line(p, 0.011, y0, 0.011, y1, 0.8, 0.95);
+        } else line(p, 0, y0, 0, y1, 1.2, 1);
+      }
+      for (const s of [-1, 1]) {
+        const y = s * reach * 0.9;
+        const cap = r.pick(['node', 'crescent', 'arrow', 'trident', 'ring', 'diamond', 'triangle'] as const);
+        p.ink('c');
+        const q = r.range(0.035, 0.06);
+        if (cap === 'node') node(p, 0, y + s * q * 0.6, q * 0.6, r.chance(0.4));
+        else if (cap === 'crescent') crescent(p, 0, y + s * q * 0.5, q, s * (Math.PI / 2), 0.45);
+        else if (cap === 'arrow') {
+          line(p, 0, y + s * q, -q * 0.7, y, 1, 1);
+          line(p, 0, y + s * q, q * 0.7, y, 1, 1);
+          line(p, 0, y, 0, y + s * q, 1, 1);
+        } else if (cap === 'trident') {
+          line(p, -q, y, q, y, 1, 1);
+          line(p, -q, y, -q, y + s * q, 1, 1);
+          line(p, q, y, q, y + s * q, 1, 1);
+          line(p, 0, y, 0, y + s * q * 1.4, 1, 1);
+        } else if (cap === 'ring') {
+          ctx.save();
+          ctx.translate(0, y + s * q);
+          circle(p, q, 1, 1);
+          dot(p, 0, 0, q * 0.3, 1);
+          ctx.restore();
+        } else if (cap === 'diamond') {
+          ctx.globalAlpha = 1;
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(q * 0.5, y + s * q);
+          ctx.lineTo(0, y + s * q * 2);
+          ctx.lineTo(-q * 0.5, y + s * q);
+          ctx.closePath();
+          ctx.fill();
+        } else strokePoly(p, [[0, y + s * q * 1.3], [q * 0.8, y], [-q * 0.8, y]], 1, 1);
+        // cross-bars ending in nodes
+        const bars = r.int(0, 2);
+        for (let b = 0; b < bars; b++) {
+          const yb = s * r.range(0.4, reach * 0.8);
+          const hw = r.range(0.06, 0.16);
+          p.ink('a');
+          line(p, -hw, yb, hw, yb, 0.9, 0.95);
+          p.ink('c');
+          node(p, -hw, yb, 0.014);
+          node(p, hw, yb, 0.014);
+        }
+        // a small ring strung on the axis
+        if (r.chance(0.6)) {
+          p.ink('c');
+          node(p, 0, s * r.range(hole + 0.08, 0.75), r.range(0.025, 0.045), r.chance(0.3));
+        }
+      }
+      if (cross) {
+        p.ink('a');
+        for (const s of [-1, 1]) {
+          line(p, s * hole, 0, s * crossReach, 0, 0.8, 0.85);
+          p.ink('c');
+          node(p, s * crossReach, 0, 0.018, true);
+          p.ink('a');
+        }
+      }
+    }, { spin: ar.range(0.015, 0.05) * ar.sign() });
+  }
+
+  // ---------- 7c. A trail of shrinking beads outside the frame (on one side only)
+  if (rng.chance(0.35)) {
+    const tr = rng.fork(81);
+    const count = tr.int(4, 7);
+    const R0 = tr.range(1.07, 1.17);
+    const big = tr.range(0.045, 0.075);
+    const shrink = tr.range(0.72, 0.86);
+    const sizes = Array.from({ length: count }, (_, i) => big * Math.pow(shrink, i));
+    const gap = tr.range(1.15, 1.6);
+    const ang = [0];
+    for (let i = 1; i < count; i++) ang.push(ang[i - 1] + ((sizes[i - 1] + sizes[i]) * gap) / R0);
+    const mid = ang[count - 1] / 2;
+    const a0 = tr.range(0, TAU);
+    const extent = R0 * Math.sin(mid) + big + 0.03;
+    const dt = fresh(82);
+    // placed on its own orbit: local +x runs along the orbit, +y points to the centre
+    addLayer('trail', extent, 0.85, (p) => {
+      const r = dt();
+      const seq = g.punishment.filter((x) => x >= 0);
+      p.ink('a');
+      p.ctx.globalAlpha = 0.7;
+      p.ctx.lineWidth = p.lw * 0.7;
+      p.ctx.beginPath();
+      p.ctx.arc(0, R0, R0, -Math.PI / 2 - mid - 0.04, -Math.PI / 2 + mid + 0.04);
+      p.ctx.stroke();
+      const inside = r.pick(['glyph', 'mixed', 'dot'] as const);
+      sizes.forEach((s, i) => {
+        const psi = ang[i] - mid - Math.PI / 2;
+        p.ctx.save();
+        p.ctx.translate(R0 * Math.cos(psi), R0 + R0 * Math.sin(psi));
+        p.ctx.rotate(psi + Math.PI / 2);
+        disc(p, s);
+        p.ink('c');
+        circle(p, s, 1.1, 1);
+        p.ctx.globalAlpha = 1;
+        const what = inside === 'mixed' ? (i % 3 === 0 ? 'sigil' : i % 3 === 1 ? 'glyph' : 'dot') : inside;
+        if (what === 'glyph') {
+          p.ink('b');
+          drawGlyph(p.ctx, seq.length ? seq[i % seq.length] : i, s * 1.25);
+        } else if (what === 'sigil') {
+          p.ink('a');
+          drawSigil(p.ctx, sigils[(i + 3) % sigils.length], s * 0.7, 1);
+        } else dot(p, 0, 0, s * 0.35, 1);
+        p.ctx.restore();
+      });
+    }, { orbit: { r: R0, a: a0 + mid, group: 4, groupSpin: tr.range(0.03, 0.08) * tr.sign() }, spin: 0 });
   }
 
   // ---------- 8. Faint giant geometry behind everything (big triangles / lines)
