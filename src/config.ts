@@ -7,7 +7,7 @@
  * While it is empty the button is hidden. It can also be set on the hosting without touching
  * the code: environment variable VITE_DONATE_URL (then rebuild).
  */
-const DONATE_LINK = '';
+const DONATE_LINK = 'https://buymeacoffee.com/dunmaer';
 
 export const DONATE_URL: string = DONATE_LINK || import.meta.env.VITE_DONATE_URL || '';
 
