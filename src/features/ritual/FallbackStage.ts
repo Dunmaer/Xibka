@@ -3,6 +3,7 @@
 import type { EngineEvents } from './engine/RitualEngine';
 import type { PaperArt } from './art/paperArt';
 import type { VideoDeck } from './VideoDeck';
+import type { RitualAudio } from './audio';
 import { F as K } from './timeline';
 
 export class FallbackStage {
@@ -12,7 +13,7 @@ export class FallbackStage {
   private lastF = -1;
   private landTimer = 0;
 
-  constructor(host: HTMLElement, private deck: VideoDeck, private events: EngineEvents = {}) {
+  constructor(host: HTMLElement, private deck: VideoDeck, private events: EngineEvents = {}, private audio?: RitualAudio) {
     for (const v of [deck.stable, deck.pribliji]) {
       v.className = 'fallback-video';
       host.appendChild(v);
@@ -50,6 +51,7 @@ export class FallbackStage {
     this.phase = 'ritual';
     this.lastF = frame - 0.001;
     this.deck.seekRitual(frame);
+    this.audio?.jump(frame);
     if (frame >= K.certBirth) this.events.onCertBirth?.();
   }
 
@@ -57,6 +59,7 @@ export class FallbackStage {
     this.phase = 'idle';
     this.paperImg.classList.remove('falling');
     window.clearTimeout(this.landTimer);
+    this.audio?.reset();
   }
 
   setFinalCenter() {}
@@ -72,6 +75,7 @@ export class FallbackStage {
     if (this.phase !== 'ritual') return;
     const f = d.ritualFrame();
     this.events.onFrame?.(f);
+    if (f >= 0) this.audio?.frame(f, this.lastF);
     if (this.lastF < K.paperPullStart && f >= K.paperPullStart) this.paperImg.classList.remove('falling');
     if (this.lastF < K.certBirth && f >= K.certBirth) this.events.onCertBirth?.();
     if (this.lastF < K.uiOn && f >= K.uiOn) this.events.onUiReady?.();

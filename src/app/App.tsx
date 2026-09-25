@@ -14,6 +14,7 @@ import {
   canvasToBlob, makeThumbnail, renderCertificate, renderCertificateLayers, type CertificateLayers,
 } from '../features/certificate/renderCertificate';
 import { RitualAudio } from '../features/ritual/audio';
+import { SOUND_SET } from '../config';
 import { ArchivePanel, ArchiveViewer } from '../features/archive/ArchivePanel';
 import { deleteCurse, listCurses, newId, saveCurse, type CurseRecord } from '../features/archive/archiveDb';
 import { downloadBlob, safeFileName } from '../utils/export/download';
@@ -40,6 +41,9 @@ const SAMPLES: Record<Lang, CurseInput> = {
   ru: { name: 'Марина Петровна', reason: 'поставила двойку за опоздание на пять минут', punishment: 'вечная икота по понедельникам' },
   hy: { name: 'Արամ', reason: 'ուշացավ հանդիպումից', punishment: 'անվերջ զկռտոց' },
 };
+
+/** With the new sound set the videos stay muted: all sound comes from RitualAudio. */
+const videoSound = (on: boolean) => on && SOUND_SET === 'old';
 
 export function App() {
   const { t, lang } = useI18n();
@@ -203,7 +207,7 @@ export function App() {
   const onSubmit = useCallback(
     (input: CurseInput) => {
       // Inside the click: allow sound for the ritual video (and the synthesised sounds) later on.
-      deck.setSound(sound);
+      deck.setSound(videoSound(sound));
       deck.unlock();
       audio.unlock();
       audio.setEnabled(sound);
@@ -247,7 +251,7 @@ export function App() {
     setSound((s) => {
       const next = !s;
       storage.set(SOUND_KEY, next ? '1' : '0');
-      deck.setSound(next);
+      deck.setSound(videoSound(next));
       deck.unlock();
       audio.unlock();
       audio.setEnabled(next);
@@ -283,7 +287,7 @@ export function App() {
     const r = viewer;
     closeViewer();
     setArchiveOpen(false);
-    deck.setSound(sound);
+    deck.setSound(videoSound(sound));
     deck.unlock();
     audio.unlock();
     audio.setEnabled(sound);
@@ -316,6 +320,26 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [runRitual],
   );
+
+  // The altar's ambience (new sound set) starts at the first touch of the page: browsers only
+  // allow sound after a user gesture.
+  const soundRef = useRef(sound);
+  soundRef.current = sound;
+  useEffect(() => {
+    if (SOUND_SET !== 'new') return;
+    const first = () => {
+      audio.unlock();
+      audio.setEnabled(soundRef.current);
+      window.removeEventListener('pointerdown', first);
+      window.removeEventListener('keydown', first);
+    };
+    window.addEventListener('pointerdown', first);
+    window.addEventListener('keydown', first);
+    return () => {
+      window.removeEventListener('pointerdown', first);
+      window.removeEventListener('keydown', first);
+    };
+  }, [audio]);
 
   const showCert = certStage !== 'hidden';
   useEffect(() => {

@@ -575,7 +575,7 @@ export class RitualEngine {
     this.lastF = -1;
     this.silentUntil = -1;
     for (const l of this.layers) l.mat.uniforms.uReveal.value = 0;
-    this.audio?.stopTail();
+    this.audio?.reset();
   }
 
   /** The note appears in front of the viewer and falls onto the altar. */
@@ -607,7 +607,7 @@ export class RitualEngine {
     this.lastF = frame - 0.001;
     this.frozenFrame = freeze ? frame : null;
     this.deck.seekRitual(frame, freeze);
-    if (frame >= K.tailAudio) void this.audio?.startTail(0.8);
+    this.audio?.jump(frame);
   }
 
   /** Where the certificate will sit (CSS px, centre + size); the circle settles behind it. */
@@ -754,6 +754,7 @@ export class RitualEngine {
 
     // ---------- events
     if (F >= 0) {
+      if (F > this.silentUntil) this.audio?.frame(F, this.lastF);
       if (this.trigger(F, K.assembled)) this.impact();
       if (this.lastF < K.tailAudio && F >= K.tailAudio) void this.audio?.startTail();
       if (this.trigger(F, K.certBirth)) this.certBurst();
@@ -805,6 +806,7 @@ export class RitualEngine {
         l.mesh.renderOrder = orderFor(z);
         if (this.trigger(F, a.arrive)) {
           l.lockT = 0;
+          this.audio?.layerLocked(Math.max(-1, Math.min(1, x / 1.3)), a.radius);
           this.sparks.burst(Math.round((a.orbit ? 8 : 24) * P.particleDensity), { r0: a.radius * 0.95, speed: 0.35, up: 0.4, z, heat: 0.9, size: 0.008, life: 0.7 });
         }
         l.lockT += dt;
@@ -828,6 +830,8 @@ export class RitualEngine {
     for (const p of this.passers) {
       const k = (F - p.spawn) / p.dur;
       const on = F >= 0 && k >= 0 && k <= 1;
+      // the moment it rushes past the camera
+      if (on && F > this.silentUntil && (this.lastF - p.spawn) / p.dur < 0.8 && k >= 0.8) this.audio?.passerNear(Math.max(-1, Math.min(1, p.x / 1.2)));
       p.mesh.visible = on;
       if (!on) continue;
       const z = lerp(p.z0, this.cam.z + 0.25, k * k);

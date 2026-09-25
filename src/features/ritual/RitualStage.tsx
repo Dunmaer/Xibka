@@ -63,7 +63,7 @@ export function RitualStage({ deck, audio, events, onDriver, visible }: Props) {
         console.warn('WebGL ritual unavailable, using fallback', e);
       }
     }
-    if (!driver && hostRef.current) driver = new FallbackStage(hostRef.current, deck, ev);
+    if (!driver && hostRef.current) driver = new FallbackStage(hostRef.current, deck, ev, audio);
     driver?.start();
     onDriver(driver, gl);
     const onResize = () => driver?.resize();

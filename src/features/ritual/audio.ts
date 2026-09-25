@@ -1,8 +1,11 @@
-// Sound that is not inside the videos:
-//  - the "tail": the last noise of pribliji.mp4, time-stretched into a seamless loop, so the
-//    ambience keeps breathing after the video ends while the circle keeps moving
-//  - the seal engraving: synthesised scratch/crackle + low rumble, a soft thud and a chime
-// Everything goes through one master gain that follows the sound toggle.
+// Sound that is not inside the videos. Two sets (src/config.ts → SOUND_SET):
+//  - 'new': the whole soundscape is played here (see soundscape.ts), the videos stay muted
+//  - 'old': the videos' own sound, plus the "tail": the last noise of pribliji.mp4,
+//    time-stretched into a seamless loop, so the ambience keeps breathing after the video ends
+// In both sets the seal engraving is synthesised here: scratch/crackle + low rumble, a soft
+// thud and a chime. Everything goes through one master gain that follows the sound toggle.
+import { SOUND_SET } from '../../config';
+import { Soundscape } from './soundscape';
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -17,6 +20,9 @@ export class RitualAudio {
   private noise: AudioBuffer | null = null;
   private enabled = true;
   private loading: Promise<void> | null = null;
+  private scape: Soundscape | null = null;
+  /** Which sound set plays; with 'new' the videos stay muted. */
+  readonly set = SOUND_SET;
 
   /** Call from a click/tap: creates/resumes the audio context. */
   unlock() {
@@ -28,7 +34,17 @@ export class RitualAudio {
         this.master = this.ctx.createGain();
         this.master.gain.value = this.enabled ? 1 : 0;
         this.master.connect(this.ctx.destination);
-        this.loading = this.loadTail();
+        if (this.set === 'new') {
+          this.scape = new Soundscape(this.ctx, this.master, BASE);
+          void this.scape.start();
+          window.setInterval(() => this.scape?.tick(), 500);
+          // no thunder from a tab in the background
+          document.addEventListener('visibilitychange', () => {
+            if (!this.ctx) return;
+            if (document.hidden) void this.ctx.suspend();
+            else void this.ctx.resume();
+          });
+        } else this.loading = this.loadTail();
       }
       if (this.ctx.state === 'suspended') void this.ctx.resume();
     } catch {
@@ -54,9 +70,40 @@ export class RitualAudio {
     }
   }
 
+  // ---- new set: cues from the ritual (no-ops with the old set)
+
+  /** Every frame of the ritual (F = pribliji frame, keeps counting after the video). */
+  frame(F: number, prevF: number) {
+    this.scape?.frame(F, prevF);
+  }
+
+  /** A piece of the circle snapped into place. */
+  layerLocked(pan: number, size: number) {
+    this.scape?.layerLocked(pan, size);
+  }
+
+  /** A tunnel piece rushes past the camera. */
+  passerNear(pan: number) {
+    this.scape?.passerNear(pan);
+  }
+
+  /** Skip / debug jump to a frame. */
+  jump(F: number) {
+    this.scape?.jump(F);
+    if (F >= 258) void this.startTail(0.8);
+  }
+
+  /** Back to the empty altar. */
+  reset() {
+    this.scape?.reset();
+    this.stopTail();
+  }
+
+  // ---- old set
+
   /** Fades the stretched ending in (as the video's own sound ends). */
   async startTail(fadeIn = 1.4, volume = 0.75) {
-    if (!this.ctx || !this.master) return;
+    if (this.set !== 'old' || !this.ctx || !this.master) return;
     await this.loading;
     if (!this.tailBuffer || this.tailSource) return;
     const ctx = this.ctx;
@@ -86,101 +133,100 @@ export class RitualAudio {
     this.tailGain = null;
   }
 
-  private noiseBuffer(): AudioBuffer | null {
-    if (!this.ctx) return null;
-    if (!this.noise) {
-      const len = this.ctx.sampleRate * 2;
-      this.noise = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
-      const d = this.noise.getChannelData(0);
-      for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
-    }
-    return this.noise;
-  }
-
   /** Engraving the seal: `duration` seconds of scratching, then a thud + chime. */
   engrave(duration: number) {
-    const ctx = this.ctx;
-    const out = this.master;
-    const noise = this.noiseBuffer();
-    if (!ctx || !out || !noise) return;
-    const t0 = ctx.currentTime + 0.02;
-    const t1 = t0 + duration;
+    if (!this.ctx || !this.master) return;
+    if (!this.noise) this.noise = makeNoise(this.ctx);
+    playEngrave(this.ctx, this.scape?.input ?? this.master, this.noise, this.ctx.currentTime + 0.02, duration);
+  }
+}
 
-    // scratch: band-passed noise with a jittery amplitude (the burin biting the wax)
-    const src = ctx.createBufferSource();
-    src.buffer = noise;
-    src.loop = true;
-    const bp = ctx.createBiquadFilter();
-    bp.type = 'bandpass';
-    bp.Q.value = 1.4;
-    bp.frequency.setValueAtTime(2600, t0);
-    bp.frequency.linearRampToValueAtTime(1500, t1);
-    const amp = ctx.createGain();
-    amp.gain.setValueAtTime(0, t0);
-    const steps = Math.floor(duration * 28);
-    for (let i = 0; i <= steps; i++) {
-      const t = t0 + (i / steps) * duration;
-      const env = Math.sin((Math.PI * i) / steps) * 0.7 + 0.3;
-      amp.gain.linearRampToValueAtTime((0.05 + Math.random() * 0.13) * env, t);
-    }
-    amp.gain.linearRampToValueAtTime(0, t1 + 0.1);
-    src.connect(bp).connect(amp).connect(out);
-    src.start(t0);
-    src.stop(t1 + 0.2);
+function makeNoise(ctx: BaseAudioContext) {
+  const len = ctx.sampleRate * 2;
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  return buf;
+}
 
-    // crackles
-    for (let i = 0; i < duration * 14; i++) {
-      const t = t0 + Math.random() * duration;
-      const c = ctx.createBufferSource();
-      c.buffer = noise;
-      const hp = ctx.createBiquadFilter();
-      hp.type = 'highpass';
-      hp.frequency.value = 3000 + Math.random() * 3000;
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0.12 + Math.random() * 0.12, t);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.03 + Math.random() * 0.04);
-      c.connect(hp).connect(g).connect(out);
-      c.start(t, Math.random());
-      c.stop(t + 0.1);
-    }
+/** The synthesised seal engraving (kept from the first version in both sound sets). */
+export function playEngrave(ctx: BaseAudioContext, out: AudioNode, noise: AudioBuffer, t0: number, duration: number) {
+  const t1 = t0 + duration;
 
-    // low rumble of the vibrating sheet
-    const osc = ctx.createOscillator();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(46, t0);
-    osc.frequency.linearRampToValueAtTime(38, t1);
-    const og = ctx.createGain();
-    og.gain.setValueAtTime(0, t0);
-    og.gain.linearRampToValueAtTime(0.18, t0 + 0.4);
-    og.gain.linearRampToValueAtTime(0.12, t1 - 0.2);
-    og.gain.linearRampToValueAtTime(0, t1 + 0.3);
-    osc.connect(og).connect(out);
-    osc.start(t0);
-    osc.stop(t1 + 0.4);
+  // scratch: band-passed noise with a jittery amplitude (the burin biting the wax)
+  const src = ctx.createBufferSource();
+  src.buffer = noise;
+  src.loop = true;
+  const bp = ctx.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.Q.value = 1.4;
+  bp.frequency.setValueAtTime(2600, t0);
+  bp.frequency.linearRampToValueAtTime(1500, t1);
+  const amp = ctx.createGain();
+  amp.gain.setValueAtTime(0, t0);
+  const steps = Math.floor(duration * 28);
+  for (let i = 0; i <= steps; i++) {
+    const t = t0 + (i / steps) * duration;
+    const env = Math.sin((Math.PI * i) / steps) * 0.7 + 0.3;
+    amp.gain.linearRampToValueAtTime((0.05 + Math.random() * 0.13) * env, t);
+  }
+  amp.gain.linearRampToValueAtTime(0, t1 + 0.1);
+  src.connect(bp).connect(amp).connect(out);
+  src.start(t0);
+  src.stop(t1 + 0.2);
 
-    // the seal is set: a soft thud and a dark chime
-    const thud = ctx.createOscillator();
-    thud.type = 'sine';
-    thud.frequency.setValueAtTime(90, t1);
-    thud.frequency.exponentialRampToValueAtTime(38, t1 + 0.35);
-    const tg = ctx.createGain();
-    tg.gain.setValueAtTime(0.0001, t1);
-    tg.gain.exponentialRampToValueAtTime(0.45, t1 + 0.01);
-    tg.gain.exponentialRampToValueAtTime(0.0001, t1 + 0.6);
-    thud.connect(tg).connect(out);
-    thud.start(t1);
-    thud.stop(t1 + 0.7);
-    for (const [f, v] of [[311, 0.07], [466, 0.05], [622, 0.035], [932, 0.02]] as const) {
-      const o = ctx.createOscillator();
-      o.type = 'sine';
-      o.frequency.value = f;
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0.0001, t1 + 0.02);
-      g.gain.exponentialRampToValueAtTime(v, t1 + 0.05);
-      g.gain.exponentialRampToValueAtTime(0.0001, t1 + 3.2);
-      o.connect(g).connect(out);
-      o.start(t1 + 0.02);
-      o.stop(t1 + 3.3);
-    }
+  // crackles
+  for (let i = 0; i < duration * 14; i++) {
+    const t = t0 + Math.random() * duration;
+    const c = ctx.createBufferSource();
+    c.buffer = noise;
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 3000 + Math.random() * 3000;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.12 + Math.random() * 0.12, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.03 + Math.random() * 0.04);
+    c.connect(hp).connect(g).connect(out);
+    c.start(t, Math.random());
+    c.stop(t + 0.1);
+  }
+
+  // low rumble of the vibrating sheet
+  const osc = ctx.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(46, t0);
+  osc.frequency.linearRampToValueAtTime(38, t1);
+  const og = ctx.createGain();
+  og.gain.setValueAtTime(0, t0);
+  og.gain.linearRampToValueAtTime(0.18, t0 + 0.4);
+  og.gain.linearRampToValueAtTime(0.12, t1 - 0.2);
+  og.gain.linearRampToValueAtTime(0, t1 + 0.3);
+  osc.connect(og).connect(out);
+  osc.start(t0);
+  osc.stop(t1 + 0.4);
+
+  // the seal is set: a soft thud and a dark chime
+  const thud = ctx.createOscillator();
+  thud.type = 'sine';
+  thud.frequency.setValueAtTime(90, t1);
+  thud.frequency.exponentialRampToValueAtTime(38, t1 + 0.35);
+  const tg = ctx.createGain();
+  tg.gain.setValueAtTime(0.0001, t1);
+  tg.gain.exponentialRampToValueAtTime(0.45, t1 + 0.01);
+  tg.gain.exponentialRampToValueAtTime(0.0001, t1 + 0.6);
+  thud.connect(tg).connect(out);
+  thud.start(t1);
+  thud.stop(t1 + 0.7);
+  for (const [f, v] of [[311, 0.07], [466, 0.05], [622, 0.035], [932, 0.02]] as const) {
+    const o = ctx.createOscillator();
+    o.type = 'sine';
+    o.frequency.value = f;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t1 + 0.02);
+    g.gain.exponentialRampToValueAtTime(v, t1 + 0.05);
+    g.gain.exponentialRampToValueAtTime(0.0001, t1 + 3.2);
+    o.connect(g).connect(out);
+    o.start(t1 + 0.02);
+    o.stop(t1 + 3.3);
   }
 }

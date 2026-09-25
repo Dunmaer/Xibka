@@ -14,7 +14,10 @@ Outputs (all committed, so you only need to re-run this when the raw art changes
     src/assets/seal-mask.png                             Pechat.png as a white-on-transparent mask
     src/assets/glyphs.svg                                symbols.svg (the 32 infernal letters)
     public/media/tail.webm, public/media/tail.m4a        the last noise of pribliji.mp4, stretched
-                                                         into a seamless loop (plays after the video)
+                                                         into a seamless loop (old sound set)
+    public/media/sfx/*.webm, *.m4a                       the new sound set, cut from "Sounds/":
+                                                         loop beds (cave, fire, roar, drone) and
+                                                         one-shots (thunder, moan, burst, spell ...)
 """
 import os, shutil, subprocess, sys
 import numpy as np
@@ -24,6 +27,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RAW = os.path.join(ROOT, "infernal pact")
 PUB = os.path.join(ROOT, "public", "media")
 ASSETS = os.path.join(ROOT, "src", "assets")
+SOUNDS = os.path.join(ROOT, "Sounds")
 
 
 def ffmpeg_bin():
@@ -189,6 +193,118 @@ def tail_audio():
         print("audio", dst, os.path.getsize(dst) // 1024, "KB")
 
 
+SR = 48000
+
+
+def load_sound(name, start=0.0, end=None):
+    """A file from Sounds/ (matched by its freesound id) as float32 stereo at 48 kHz."""
+    ff = ffmpeg_bin()
+    src = next(os.path.join(SOUNDS, f) for f in sorted(os.listdir(SOUNDS)) if f.startswith(name))
+    args = [ff, "-v", "error", "-ss", str(start)]
+    if end is not None:
+        args += ["-t", str(end - start)]
+    args += ["-i", src, "-ac", "2", "-ar", str(SR), "-f", "f32le", "-"]
+    raw = subprocess.run(args, check=True, capture_output=True).stdout
+    return np.frombuffer(raw, dtype=np.float32).reshape(-1, 2).copy()
+
+
+def fades(x, fin=0.01, fout=0.05):
+    a, b = int(fin * SR), int(fout * SR)
+    if a:
+        x[:a] *= np.linspace(0, 1, a)[:, None] ** 2
+    if b:
+        x[-b:] *= np.linspace(1, 0, b)[:, None] ** 2
+    return x
+
+
+def rms_db(x):
+    return 20 * np.log10(np.sqrt(np.mean(x ** 2)) + 1e-9)
+
+
+def to_rms(x, db, peak=-1.0):
+    """Loop beds: the same average loudness, peaks kept under `peak` dBFS."""
+    x = x * 10 ** ((db - rms_db(x)) / 20)
+    lim = 10 ** (peak / 20)
+    over = np.abs(x).max()
+    return x * (lim / over) if over > lim else x
+
+
+def to_peak(x, db=-1.0):
+    return x * (10 ** (db / 20) / max(1e-9, np.abs(x).max()))
+
+
+def shelf(x, gain_db, freq):
+    """Gentle high shelf (one-pole split) - makes the thunder cracks crisper."""
+    from scipy.signal import lfilter
+    a = np.exp(-2 * np.pi * freq / SR)
+    low = lfilter([1 - a], [1, -a], x, axis=0)
+    return low + (x - low) * 10 ** (gain_db / 20)
+
+
+def resample(x, rate):
+    """Plays x `rate` times faster (pitch up); linear interpolation is fine for noise beds."""
+    n = int(len(x) / rate)
+    t = np.arange(n) * rate
+    i = np.minimum(t.astype(int), len(x) - 2)
+    f = (t - i)[:, None]
+    return x[i] * (1 - f) + x[i + 1] * f
+
+
+def save_sound(name, x):
+    ff = ffmpeg_bin()
+    out = os.path.join(PUB, "sfx")
+    os.makedirs(out, exist_ok=True)
+    pcm = np.clip(x, -1, 1).astype(np.float32).tobytes()
+    for ext, codec in (("webm", ["-c:a", "libopus", "-b:a", "112k"]), ("m4a", ["-c:a", "aac", "-b:a", "144k"])):
+        dst = os.path.join(out, f"{name}.{ext}")
+        subprocess.run([ff, "-y", "-v", "error", "-f", "f32le", "-ar", str(SR), "-ac", "2", "-i", "-", *codec, dst],
+                       input=pcm, check=True)
+    print("sfx", name, f"{len(x) / SR:.1f}s", os.path.getsize(os.path.join(out, name + ".webm")) // 1024, "KB")
+
+
+def sounds():
+    """The new sound set. Loop beds are plain segments: the page crossfades their ends itself
+    (after decoding), so the loops have no seam whatever the codec padding is."""
+    rng = np.random.default_rng(7)
+
+    # cave: the short hollow wind, layered from shifted and slightly re-pitched copies into a
+    # 24 s bed, so its repetition is not heard
+    wind = load_sound("453850", 0.05, 4.75)
+    bed = np.zeros((26 * SR, 2), np.float32)
+    for k in range(16):
+        piece = resample(wind, rng.uniform(0.88, 1.08))
+        if k % 2:
+            piece = piece[:, ::-1]
+        piece = fades(piece.copy(), 1.2, 1.4)
+        at = int((-2 + k * 1.75 + rng.uniform(-0.4, 0.4)) * SR)
+        a0, a1 = max(0, at), min(len(bed), at + len(piece))
+        if a1 > a0:
+            bed[a0:a1] += piece[a0 - at:a1 - at] * rng.uniform(0.6, 1.0)
+    save_sound("cave", to_rms(bed[2 * SR:24 * SR], -21))
+
+    # fire crackling (without the loud flare at the end, which becomes its own accent)
+    save_sound("fire", to_rms(load_sound("543657", 0.2, 22.2), -22))
+    save_sound("flare", to_peak(fades(load_sound("543657", 22.3, 25.2), 0.02, 0.6), -2))
+    # roaring fire: the steady part after the eruption
+    save_sound("roar", to_rms(load_sound("828433", 2.6, 13.7), -21))
+    # eruption: the burst and a bit of roar
+    save_sound("burst", to_peak(fades(load_sound("828433", 0.7, 5.0), 0.005, 1.6), -1))
+
+    # thunder, cut to start just before the crack and made crisper
+    save_sound("thunder1", to_peak(shelf(fades(load_sound("744716", 0.95, 13.0), 0.02, 3.0), 5, 2500), -0.5))
+    save_sound("thunder2", to_peak(shelf(fades(load_sound("744722", 4.9, 8.8), 0.3, 0.5), 5, 2500), -0.5))
+    save_sound("thunder3", to_peak(shelf(fades(load_sound("744723", 3.05, 14.0), 0.02, 3.0), 6, 2500), -0.5))
+
+    # cave moan, wind swell (the page also plays it reversed, as a rush into the impact)
+    save_sound("moan", to_peak(fades(load_sound("581090", 0.3, 7.8), 0.6, 1.2), -3))
+    save_sound("whoosh", to_peak(fades(load_sound("475876", 0.0, 5.2), 0.02, 0.8), -1))
+
+    # magic: the even drone of the circle, a sparkle for pieces locking in, a flutter for motion
+    save_sound("drone", to_rms(load_sound("758005", 1.0, 14.8), -22))
+    save_sound("spell", to_peak(fades(load_sound("442774", 0.0, 1.6), 0.002, 0.3), -1))
+    save_sound("flutter", to_peak(fades(load_sound("636087", 0.05, 4.3), 0.01, 0.8), -1))
+
+
 def glyphs():
     shutil.copy(os.path.join(RAW, "symbols.svg"), os.path.join(ASSETS, "glyphs.svg"))
 
@@ -197,6 +313,6 @@ if __name__ == "__main__":
     os.makedirs(PUB, exist_ok=True)
     os.makedirs(ASSETS, exist_ok=True)
     only = sys.argv[1:]
-    for step in (encode_videos, paper, certificate, seal, glyphs, tail_audio):
+    for step in (encode_videos, paper, certificate, seal, glyphs, tail_audio, sounds):
         if not only or step.__name__ in only:
             step()

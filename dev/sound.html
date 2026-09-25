@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Ritual soundtrack (dev)</title>
+  <style>
+    body { margin: 0; padding: 24px; background: #0b0706; color: #d9b98a; font: 15px system-ui, sans-serif; }
+    audio { width: min(720px, 100%); display: block; margin: 16px 0; }
+    a { color: #ffb08a; }
+    ol { line-height: 1.6; opacity: .85 }
+  </style>
+</head>
+<body>
+  <h1>Ritual soundtrack</h1>
+  <p id="status">Rendering…</p>
+  <audio id="player" controls></audio>
+  <a id="dl" download="ritual-soundtrack.wav"></a>
+  <ol>
+    <li>0–8 s: the altar before the ritual (cave, fire, random thunder and moans)</li>
+    <li>8 s: the ritual starts (the note has landed); heat builds up</li>
+    <li>~15.5 s: thunder; 15.3–18.2 s the rush grows into the impact</li>
+    <li>~15.3 s: the magic circle wakes (drone), pieces fly past and snap in</li>
+    <li>~18.2 s: the circle is complete: thunder, eruption</li>
+    <li>~18.9 s: the certificate rises; 20.7–22.8 s the seal is engraved</li>
+    <li>then the final bed: circle drone, cave, fire, distant thunder</li>
+  </ol>
+  <script type="module" src="./sound.ts"></script>
+</body>
+</html>
