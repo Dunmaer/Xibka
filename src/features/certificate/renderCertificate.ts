@@ -107,14 +107,30 @@ function divider(ctx: CanvasRenderingContext2D, cx: number, y: number, half: num
   ctx.restore();
 }
 
+/**
+ * A soft halo behind text, made of faint copies around it. (Canvas text shadows are not used:
+ * Safari on iPhone draws them shifted for centred text, which doubled the letters.)
+ */
+function halo(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, color: string, r: number) {
+  ctx.save();
+  ctx.fillStyle = color;
+  for (const k of [1, 0.5]) {
+    const n = k === 1 ? 12 : 6;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      ctx.fillText(text, x + Math.cos(a) * r * k, y + Math.sin(a) * r * k);
+    }
+  }
+  ctx.restore();
+}
+
 /** Ink that sits in the paper: a hair of darker bleed + a faint light edge below. */
 function inkText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, color: string) {
   ctx.save();
   ctx.fillStyle = 'rgba(255, 244, 220, 0.35)';
   ctx.fillText(text, x, y + 1.2);
+  halo(ctx, text, x, y, 'rgba(60, 10, 5, 0.035)', 1.2);
   ctx.fillStyle = color;
-  ctx.shadowColor = 'rgba(60, 10, 5, 0.25)';
-  ctx.shadowBlur = 1.5;
   ctx.fillText(text, x, y);
   ctx.restore();
 }
@@ -412,8 +428,7 @@ export async function renderCertificateLayers(data: CertificateData, scale = 1.5
     // soaked-in blood red with a dark core
     ctx.fillStyle = 'rgba(255, 235, 210, 0.4)';
     ctx.fillText(ln, cx, y + 1.5);
-    ctx.shadowColor = 'rgba(140, 0, 0, 0.45)';
-    ctx.shadowBlur = 6;
+    halo(ctx, ln, cx, y, 'rgba(140, 0, 0, 0.045)', 3.5);
     const g = ctx.createLinearGradient(0, y - pun.size, 0, y);
     g.addColorStop(0, '#9e1010');
     g.addColorStop(1, '#5a0404');
