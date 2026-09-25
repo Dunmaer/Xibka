@@ -9,7 +9,7 @@ declare const process: { env: Record<string, string | undefined> };
  * previews, robots.txt and sitemap.xml. Build with SITE_URL= (empty) for hosts where the
  * address is not known in advance (e.g. the itch.io ZIP): those files are then left out.
  */
-const DEFAULT_SITE_URL = process.env.SITE_URL ?? 'https://dunmaer.github.io/Xibka/';
+const DEFAULT_SITE_URL = process.env.SITE_URL ?? 'https://infernalcertificate.org/';
 
 function seo(SITE_URL: string): Plugin {
   return {
