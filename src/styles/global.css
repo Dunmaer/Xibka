@@ -629,7 +629,7 @@ textarea {
   }
   .cert__slot {
     height: auto;
-    width: min(calc(100vw - 32px), calc((100dvh - 250px) * 979 / 1360));
+    width: min(calc(100vw - 32px), calc((100dvh - 290px) * 979 / 1360));
   }
   .cert__actions {
     max-width: 520px;
@@ -643,6 +643,10 @@ textarea {
   .cert__actions .btn--primary,
   .cert__actions .btn:nth-child(2) {
     flex-basis: 100%;
+  }
+  .cert__donate {
+    padding-top: 0;
+    font-size: 15px;
   }
 }
 

@@ -131,12 +131,12 @@ export async function renderPaper(input: CurseInput, t: Dict): Promise<PaperArt>
 
   // Rune mask: the name + punishment in infernal letters, written big across the sheet.
   const runes = document.createElement('canvas');
-  runes.width = 512;
-  runes.height = Math.round((512 * H) / W);
+  runes.width = 1024;
+  runes.height = Math.round((1024 * H) / W);
   const r = runes.getContext('2d')!;
   r.fillStyle = '#fff';
-  r.shadowColor = '#fff';
-  r.shadowBlur = 6;
+  r.shadowColor = 'rgba(255,255,255,0.55)';
+  r.shadowBlur = 5;
   const lineGlyphs = [toGlyphs(input.name), toGlyphs(input.punishment)];
   lineGlyphs.forEach((g, li) => {
     const seq = g.length ? g : [0];
