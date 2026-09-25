@@ -82,7 +82,8 @@ export class VideoDeck {
   async load(onProgress: (p: number) => void): Promise<void> {
     this.stable.src = STABLE_URL;
     const stableReady = whenReady(this.stable);
-    const p = await fetchWithProgress(PRIBLIJI_URL, (l, t) => onProgress(Math.min(1, l / t)));
+    const p = IOS ? PRIBLIJI_URL : await fetchWithProgress(PRIBLIJI_URL, (l, t) => onProgress(Math.min(1, l / t)));
+    this.pribliji.preload = 'auto';
     this.pribliji.src = p;
     await Promise.all([stableReady, whenReady(this.pribliji)]);
   }
@@ -97,6 +98,8 @@ export class VideoDeck {
    * (Safari only allows unmuted playback of elements that were started from a gesture).
    */
   unlock() {
+    // the background loop too: on iPhones it may not have started on its own
+    if (this.stable.src && this.stable.paused && !this.started) void this.stable.play().catch(() => {});
     const v = this.pribliji;
     if (this.started || !v.src) return;
     v.muted = !this.soundOn;
@@ -248,17 +251,29 @@ export class VideoDeck {
   }
 }
 
-function whenReady(v: HTMLVideoElement): Promise<void> {
+/**
+ * Resolves once the video has data — or after `timeout` ms anyway: iPhones do not load a video
+ * before it is played (and in Low Power Mode do not autoplay at all), and the ritual must never
+ * wait for that forever.
+ */
+function whenReady(v: HTMLVideoElement, timeout = 6000): Promise<void> {
   return new Promise((resolve) => {
     if (v.readyState >= 3) return resolve();
+    let timer = 0;
     const done = () => {
       v.removeEventListener('canplaythrough', done);
       v.removeEventListener('loadeddata', done);
       v.removeEventListener('error', done);
+      window.clearTimeout(timer);
       resolve();
     };
     v.addEventListener('canplaythrough', done);
     v.addEventListener('loadeddata', done);
     v.addEventListener('error', done);
+    timer = window.setTimeout(done, timeout);
   });
 }
+
+/** iPhone / iPad Safari: plays video from blob: URLs unreliably, so it streams the file instead. */
+const IOS = typeof navigator !== 'undefined' &&
+  (/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));

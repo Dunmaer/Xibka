@@ -88,6 +88,8 @@ export function App() {
       setStableReady(ok);
       deck.playStable();
     });
+    // iPhones (Low Power Mode) only start it after the first tap
+    deck.stable.addEventListener('playing', () => setStableReady(true), { once: true });
     void listCurses().then(setArchive).catch(() => {});
     void ensureFonts(lang);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -213,6 +215,7 @@ export function App() {
       deck.unlock();
       audio.unlock();
       audio.setEnabled(sound);
+      tilt.request();
       const cur: Current = { params: makeRitualParams(input), input, lang, createdAt: Date.now() };
       track('ritual-start', `Ritual started (${lang})`);
       void runRitual(cur, { save: true });
@@ -225,6 +228,7 @@ export function App() {
     if (!cur) return;
     deck.unlock();
     audio.unlock();
+    tilt.request();
     track('ritual-replay', 'Ritual replayed');
     void runRitual(cur, { save: false });
   }, [deck, audio, runRitual]);
@@ -339,7 +343,6 @@ export function App() {
     function onGesture() {
       audio.unlock();
       audio.setEnabled(soundRef.current);
-      tilt.request();
       // a refused start only shows a moment later, so look again then
       window.setTimeout(() => audio.running && stop(), 500);
     }
@@ -355,7 +358,7 @@ export function App() {
   return (
     <div className={`app app--${screen}`} data-ready={stableReady ? '1' : undefined}>
       <div className="poster" aria-hidden="true" style={{ backgroundImage: `url(${import.meta.env.BASE_URL}media/poster.jpg)` }} />
-      <RitualStage deck={deck} audio={audio} events={events} onDriver={onDriver} visible={stableReady} />
+      <RitualStage deck={deck} audio={audio} events={events} onDriver={onDriver} visible={stableReady || screen !== 'intro'} />
 
       <TopBar
         sound={sound}
