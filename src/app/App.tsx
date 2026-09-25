@@ -15,6 +15,7 @@ import {
 } from '../features/certificate/renderCertificate';
 import { RitualAudio } from '../features/ritual/audio';
 import { SOUND_SET } from '../config';
+import { tilt } from '../features/ritual/motion';
 import { ArchivePanel, ArchiveViewer } from '../features/archive/ArchivePanel';
 import { deleteCurse, listCurses, newId, saveCurse, type CurseRecord } from '../features/archive/archiveDb';
 import { downloadBlob, safeFileName } from '../utils/export/download';
@@ -321,24 +322,24 @@ export function App() {
     [runRitual],
   );
 
-  // The altar's ambience (new sound set) starts at the first touch of the page: browsers only
-  // allow sound after a user gesture.
+  // The altar's ambience and the music start at the first touch of the page: browsers only allow
+  // sound after a user gesture. Not every event counts as one (on phones a finger going down does
+  // not, lifting it does), so it keeps trying on every gesture until the sound really runs.
   const soundRef = useRef(sound);
   soundRef.current = sound;
   useEffect(() => {
     if (SOUND_SET !== 'new') return;
-    const first = () => {
+    const events = ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown'] as const;
+    const stop = () => events.forEach((e) => window.removeEventListener(e, onGesture, true));
+    function onGesture() {
       audio.unlock();
       audio.setEnabled(soundRef.current);
-      window.removeEventListener('pointerdown', first);
-      window.removeEventListener('keydown', first);
-    };
-    window.addEventListener('pointerdown', first);
-    window.addEventListener('keydown', first);
-    return () => {
-      window.removeEventListener('pointerdown', first);
-      window.removeEventListener('keydown', first);
-    };
+      tilt.request();
+      // a refused start only shows a moment later, so look again then
+      window.setTimeout(() => audio.running && stop(), 500);
+    }
+    events.forEach((e) => window.addEventListener(e, onGesture, true));
+    return stop;
   }, [audio]);
 
   const showCert = certStage !== 'hidden';

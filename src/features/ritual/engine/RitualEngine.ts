@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { isTouch, tilt } from '../motion';
 import { AltarCamera } from './AltarCamera';
 import { Post } from './Post';
 import { Particles } from './Particles';
@@ -166,6 +167,8 @@ export class RitualEngine {
   // pointer (−1..1), target and smoothed
   private mouse = new THREE.Vector2();
   private mouseS = new THREE.Vector2();
+  private target = new THREE.Vector2();
+  private touch = isTouch();
   private onPointer = (e: PointerEvent) => {
     this.mouse.set((e.clientX / window.innerWidth) * 2 - 1, (e.clientY / window.innerHeight) * 2 - 1);
   };
@@ -287,6 +290,7 @@ export class RitualEngine {
     }
 
     window.addEventListener('pointermove', this.onPointer, { passive: true });
+    tilt.start();
     window.addEventListener('pointerdown', this.onPointer, { passive: true });
     document.addEventListener('pointerleave', this.onLeave);
 
@@ -693,8 +697,18 @@ export class RitualEngine {
     if (this.frozenFrame !== null && this.phase === 'ritual') F = this.frozenFrame;
     if (F >= 0) this.events.onFrame?.(F);
 
-    // ---------- pointer (a little eager, so the scene follows the hand)
-    this.mouseS.lerp(this.mouse, 1 - Math.exp(-dt * 5));
+    // ---------- pointer (a little eager, so the scene follows the hand). On a phone nobody
+    // hovers: the camera drifts on its own, the tilt of the phone steers it, a finger still can.
+    if (this.touch) {
+      const tx = 0.42 * Math.sin(t * 0.23) + 0.18 * Math.sin(t * 0.61 + 2);
+      const ty = 0.36 * Math.sin(t * 0.19 + 1) + 0.15 * Math.sin(t * 0.53);
+      const drift = tilt.active ? 0.6 : 1;
+      this.target.set(
+        Math.max(-1, Math.min(1, tx * drift + tilt.value.x * 1.1 + this.mouse.x * 0.5)),
+        Math.max(-1, Math.min(1, ty * drift + tilt.value.y * 1.1 + this.mouse.y * 0.5)),
+      );
+    } else this.target.copy(this.mouse);
+    this.mouseS.lerp(this.target, 1 - Math.exp(-dt * 5));
     const mx = this.mouseS.x;
     const my = this.mouseS.y;
 

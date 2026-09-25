@@ -29,6 +29,10 @@ export class MusicLoop {
     window.setInterval(() => this.watch(), 250);
   }
 
+  get playing() {
+    return this.started && !this.players[this.active].paused;
+  }
+
   /** Call from a click/tap (browsers, iOS above all, only let media start inside a gesture). */
   start() {
     if (this.started) return;

@@ -35,6 +35,9 @@ export class RitualAudio {
       if (!this.ctx) {
         const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
         if (!AC) return;
+        // iPhone: play even with the silent switch on (as a video would), not as "ambient" sound
+        const session = (navigator as unknown as { audioSession?: { type: string } }).audioSession;
+        if (session) session.type = 'playback';
         this.ctx = new AC();
         this.master = this.ctx.createGain();
         this.master.gain.value = this.enabled ? 1 : 0;
@@ -59,6 +62,11 @@ export class RitualAudio {
     } catch {
       this.ctx = null;
     }
+  }
+
+  /** True once the browser really lets the sound play (and the music has started). */
+  get running() {
+    return !!this.ctx && this.ctx.state === 'running' && (!this.music || this.music.playing);
   }
 
   setEnabled(on: boolean) {
