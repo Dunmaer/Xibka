@@ -25,6 +25,16 @@ async function render() {
   if (mute.has('crack')) hooks.crack = () => {};
   await scape.start();
   if (mute.has('beds')) hooks.amb.disconnect();
+  if (!mute.has('music')) {
+    // the page streams the music; here it is simply decoded and played from the start
+    const data = await (await fetch(`${import.meta.env.BASE_URL}media/music.webm`)).arrayBuffer();
+    const src = ctx.createBufferSource();
+    src.buffer = await ctx.decodeAudioData(data);
+    const g = ctx.createGain();
+    g.gain.value = 0.25;
+    src.connect(g).connect(scape.post);
+    src.start(0);
+  }
 
   // what the engine would report: layers snapping in, tunnel pieces rushing past
   const P = makeRitualParams({ name: 'Viktor', reason: 'ate my yoghurt from the office fridge', punishment: 'eternal hiccups' });

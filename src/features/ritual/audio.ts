@@ -6,6 +6,10 @@
 // thud and a chime. Everything goes through one master gain that follows the sound toggle.
 import { SOUND_SET } from '../../config';
 import { Soundscape } from './soundscape';
+import { MusicLoop } from './music';
+
+/** Background music level (25 % of the track's own loudness). */
+const MUSIC_VOLUME = 0.25;
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -21,6 +25,7 @@ export class RitualAudio {
   private enabled = true;
   private loading: Promise<void> | null = null;
   private scape: Soundscape | null = null;
+  private music: MusicLoop | null = null;
   /** Which sound set plays; with 'new' the videos stay muted. */
   readonly set = SOUND_SET;
 
@@ -37,6 +42,9 @@ export class RitualAudio {
         if (this.set === 'new') {
           this.scape = new Soundscape(this.ctx, this.master, BASE);
           void this.scape.start();
+          const probe = document.createElement('audio');
+          const ext = probe.canPlayType('audio/webm; codecs="opus"') ? 'webm' : 'm4a';
+          this.music = new MusicLoop(this.ctx, this.scape.post, `${BASE}media/music.${ext}`, MUSIC_VOLUME);
           window.setInterval(() => this.scape?.tick(), 500);
           // no thunder from a tab in the background
           document.addEventListener('visibilitychange', () => {
@@ -47,6 +55,7 @@ export class RitualAudio {
         } else this.loading = this.loadTail();
       }
       if (this.ctx.state === 'suspended') void this.ctx.resume();
+      this.music?.start();
     } catch {
       this.ctx = null;
     }
@@ -217,16 +226,28 @@ export function playEngrave(ctx: BaseAudioContext, out: AudioNode, noise: AudioB
   thud.connect(tg).connect(out);
   thud.start(t1);
   thud.stop(t1 + 0.7);
-  for (const [f, v] of [[311, 0.07], [466, 0.05], [622, 0.035], [932, 0.02]] as const) {
-    const o = ctx.createOscillator();
-    o.type = 'sine';
-    o.frequency.value = f;
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, t1 + 0.02);
-    g.gain.exponentialRampToValueAtTime(v, t1 + 0.05);
-    g.gain.exponentialRampToValueAtTime(0.0001, t1 + 3.2);
-    o.connect(g).connect(out);
-    o.start(t1 + 0.02);
-    o.stop(t1 + 3.3);
+  // then two or three dark bell notes, each quieter than the one before, never the same tune
+  const scale = [233.1, 277.2, 311.1, 370.0, 415.3, 466.2, 554.4]; // D# minor pentatonic-ish
+  const count = Math.random() < 0.5 ? 2 : 3;
+  let idx = 2 + Math.floor(Math.random() * 3);
+  for (let n = 0; n < count; n++) {
+    const at = t1 + 0.02 + n * (0.42 + Math.random() * 0.12);
+    const level = [1, 0.55, 0.28][n];
+    const base = scale[idx];
+    for (const [k, v] of [[1, 0.07], [1.5, 0.05], [2, 0.035], [3, 0.02]] as const) {
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.value = base * k;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.exponentialRampToValueAtTime(v * level, at + 0.03);
+      g.gain.exponentialRampToValueAtTime(0.0001, at + 3.2 - n * 0.5);
+      o.connect(g).connect(out);
+      o.start(at);
+      o.stop(at + 3.3);
+    }
+    // next note: a step or two up or down the scale, always a different one
+    const step = (Math.random() < 0.5 ? -1 : 1) * (1 + Math.floor(Math.random() * 2));
+    idx = idx + step >= 0 && idx + step < scale.length ? idx + step : idx - step;
   }
 }

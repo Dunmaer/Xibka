@@ -18,13 +18,15 @@ const LOOP_XFADE: Record<Bed, number> = { cave: 2.2, fire: 2.5, roar: 1.6, drone
 /** Where the crack sits inside each thunder file (s), for the synthesised transient. */
 const CRACK: Record<string, number> = { thunder1: 0.32, thunder2: 1.52, thunder3: 0.28 };
 
-type Phase = 'idle' | 'ritual' | 'dive' | 'final';
+type Phase = 'idle' | 'ritual' | 'dive' | 'final' | 'rest';
 /** Bed levels per phase (linear gain on beds normalised to about -21 dBFS RMS). */
 const LEVELS: Record<Phase, Record<Bed, number>> = {
   idle: { cave: 0.62, fire: 0.42, roar: 0, drone: 0 },
   ritual: { cave: 0.68, fire: 0.6, roar: 0.22, drone: 0 },
   dive: { cave: 0.45, fire: 0.5, roar: 0.36, drone: 0.5 },
   final: { cave: 0.5, fire: 0.36, roar: 0.16, drone: 0.52 },
+  // the main animation is over: the circle only hums (5x quieter)
+  rest: { cave: 0.5, fire: 0.36, roar: 0.16, drone: 0.1 },
 };
 
 interface PlayOpts {
@@ -55,6 +57,8 @@ export class Soundscape {
   readonly ready: Promise<void>;
   /** Where other sounds (the seal engraving) join the mix, so the limiter covers them too. */
   readonly input: AudioNode;
+  /** The limiter at the end of the chain (the music joins here, past the compressor). */
+  readonly post: AudioNode;
 
   constructor(
     private ctx: BaseAudioContext,
@@ -82,6 +86,7 @@ export class Soundscape {
     const trim = ctx.createGain();
     trim.gain.value = 0.9;
     comp.connect(gain).connect(limit).connect(trim).connect(out);
+    this.post = limit;
     this.amb = ctx.createGain();
     this.fx = ctx.createGain();
     this.amb.connect(comp);
@@ -270,7 +275,7 @@ export class Soundscape {
     if (!this.started) return;
     const ahead = now + 2.5;
     while (this.nextThunder < ahead) {
-      const final = this.phase === 'final';
+      const final = this.phase === 'final' || this.phase === 'rest';
       this.thunder(Math.max(now, this.nextThunder), final ? rand(0.35, 0.55) : rand(0.55, 0.9));
       this.nextThunder += final ? rand(14, 28) : this.phase === 'idle' ? rand(9, 20) : rand(6, 13);
     }
@@ -304,6 +309,7 @@ export class Soundscape {
     if (at(K.assembled - 5)) this.amb.gain.setTargetAtTime(0.35, now, 0.06);
     if (at(K.paperBurnStart)) this.play('burst', now, { gain: 0.32, rate: 1.12 });
     if (at(K.assembled)) this.impact(now);
+    if (at(K.uiOn)) this.setPhase('rest', 6);
     if (at(K.certBirth)) {
       this.play('flutter', now, { gain: 0.24, rate: 0.9 });
       this.play('spell', now + 0.35, { gain: 0.18, rate: 0.75 });
@@ -347,7 +353,7 @@ export class Soundscape {
   /** A skip / debug jump: set the beds for that moment without firing the cues in between. */
   jump(F: number) {
     this.amb.gain.setTargetAtTime(1, this.now(), 0.2);
-    this.setPhase(F >= K.assembled ? 'final' : F >= K.circlesOn ? 'dive' : F >= 0 ? 'ritual' : 'idle', 1.5);
+    this.setPhase(F >= K.uiOn ? 'rest' : F >= K.assembled ? 'final' : F >= K.circlesOn ? 'dive' : F >= 0 ? 'ritual' : 'idle', 1.5);
   }
 
   /** Back to the empty altar: the magic fades, the cave and the fire stay. */

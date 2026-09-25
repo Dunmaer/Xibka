@@ -18,6 +18,7 @@ Outputs (all committed, so you only need to re-run this when the raw art changes
     public/media/sfx/*.webm, *.m4a                       the new sound set, cut from "Sounds/":
                                                          loop beds (cave, fire, roar, drone) and
                                                          one-shots (thunder, moan, burst, spell ...)
+    public/media/music.webm, music.m4a                   "Grinding Inferno", silent ends trimmed
 """
 import os, shutil, subprocess, sys
 import numpy as np
@@ -305,6 +306,23 @@ def sounds():
     save_sound("flutter", to_peak(fades(load_sound("636087", 0.05, 4.3), 0.01, 0.8), -1))
 
 
+def music():
+    """'Grinding Inferno' without its silent head and tail (the page crossfades its end into
+    its start while it loops, so the music never stops)."""
+    ff = ffmpeg_bin()
+    raw = subprocess.run([ff, "-v", "error", "-i", os.path.join(SOUNDS, "Grinding Inferno.mp3"), "-ac", "2", "-ar", str(SR),
+                          "-f", "f32le", "-"], check=True, capture_output=True).stdout
+    x = np.frombuffer(raw, dtype=np.float32).reshape(-1, 2)
+    loud = np.where(np.abs(x).max(1) > 10 ** (-50 / 20))[0]
+    x = fades(x[max(0, loud[0] - 480):loud[-1] + 480].copy(), 0.01, 0.05)
+    pcm = x.astype(np.float32).tobytes()
+    for ext, codec in (("webm", ["-c:a", "libopus", "-b:a", "96k"]), ("m4a", ["-c:a", "aac", "-b:a", "128k"])):
+        dst = os.path.join(PUB, f"music.{ext}")
+        subprocess.run([ff, "-y", "-v", "error", "-f", "f32le", "-ar", str(SR), "-ac", "2", "-i", "-", *codec, dst],
+                       input=pcm, check=True)
+        print("music", dst, f"{len(x) / SR:.1f}s", os.path.getsize(dst) // 1024, "KB")
+
+
 def glyphs():
     shutil.copy(os.path.join(RAW, "symbols.svg"), os.path.join(ASSETS, "glyphs.svg"))
 
@@ -313,6 +331,6 @@ if __name__ == "__main__":
     os.makedirs(PUB, exist_ok=True)
     os.makedirs(ASSETS, exist_ok=True)
     only = sys.argv[1:]
-    for step in (encode_videos, paper, certificate, seal, glyphs, tail_audio, sounds):
+    for step in (encode_videos, paper, certificate, seal, glyphs, tail_audio, sounds, music):
         if not only or step.__name__ in only:
             step()
