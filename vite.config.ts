@@ -37,7 +37,8 @@ function seo(SITE_URL: string): Plugin {
         .replace('content="./media/poster.jpg"', `content="${SITE_URL}media/poster.jpg"`)
         .replace(
           '</head>',
-          `    <link rel="canonical" href="${SITE_URL}" />\n` +
+          `    <script data-goatcounter="https://infernalcertificate.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>\n` +
+            `    <link rel="canonical" href="${SITE_URL}" />\n` +
             `    <meta property="og:url" content="${SITE_URL}" />\n` +
             `    <script type="application/ld+json">${JSON.stringify(ld)}</script>\n  </head>`,
         );

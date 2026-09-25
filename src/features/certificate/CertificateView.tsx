@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import gsap from 'gsap';
 import { useI18n } from '../i18n/i18n';
+import { track } from '../../utils/analytics';
 import { DONATE_URL } from '../../config';
 import { IconArchive, IconDownload, IconHeart, IconPlus, IconReplay } from '../../components/Icons';
 
@@ -129,7 +130,7 @@ export function CertificateView({ stage, imageUrl, showActions, webgl, onLayout,
           {t.archiveButton}
         </button>
         {DONATE_URL && (
-          <a className="cert__donate" href={DONATE_URL} target="_blank" rel="noopener noreferrer" tabIndex={showActions ? 0 : -1}>
+          <a className="cert__donate" href={DONATE_URL} onClick={() => track('donate-click', 'Donate clicked')} target="_blank" rel="noopener noreferrer" tabIndex={showActions ? 0 : -1}>
             <IconHeart />
             {t.donateLine}
           </a>

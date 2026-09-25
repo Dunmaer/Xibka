@@ -42,6 +42,14 @@ npm run preview      # посмотреть собранную версию
 JavaScript, и разметка schema.org (VideoGame). `robots.txt` разрешает всех, в том числе
 OAI-SearchBot (поиск ChatGPT).
 
+### Статистика посещений
+
+Счётчик GoatCounter (без cookie): панель на https://infernalcertificate.goatcounter.com.
+Скрипт добавляется в `index.html` только в сборке сайта (`vite.config.ts`). Кроме заходов
+считаются действия (`src/utils/analytics.ts`): `ritual-start`, `ritual-replay`,
+`certificate-download`, `donate-click`. Блокировщики рекламы иногда прячут счётчик, так что
+цифры немного занижены.
+
 ### itch.io
 
 ```bash

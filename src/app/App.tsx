@@ -16,6 +16,7 @@ import {
 import { RitualAudio } from '../features/ritual/audio';
 import { SOUND_SET } from '../config';
 import { tilt } from '../features/ritual/motion';
+import { track } from '../utils/analytics';
 import { ArchivePanel, ArchiveViewer } from '../features/archive/ArchivePanel';
 import { deleteCurse, listCurses, newId, saveCurse, type CurseRecord } from '../features/archive/archiveDb';
 import { downloadBlob, safeFileName } from '../utils/export/download';
@@ -213,6 +214,7 @@ export function App() {
       audio.unlock();
       audio.setEnabled(sound);
       const cur: Current = { params: makeRitualParams(input), input, lang, createdAt: Date.now() };
+      track('ritual-start', `Ritual started (${lang})`);
       void runRitual(cur, { save: true });
     },
     [deck, audio, sound, lang, runRitual],
@@ -223,6 +225,7 @@ export function App() {
     if (!cur) return;
     deck.unlock();
     audio.unlock();
+    track('ritual-replay', 'Ritual replayed');
     void runRitual(cur, { save: false });
   }, [deck, audio, runRitual]);
 
@@ -246,6 +249,7 @@ export function App() {
     let blob = certBlobRef.current;
     if (!blob && certRef.current) blob = await canvasToBlob(await certRef.current);
     if (blob) downloadBlob(blob, `curse-${safeFileName(cur.input.name)}-${cur.params.archiveId}.png`);
+    track('certificate-download', 'Certificate downloaded');
   }, []);
 
   const toggleSound = useCallback(() => {
@@ -281,6 +285,7 @@ export function App() {
     if (!viewer || !viewerUrl) return;
     const blob = await fetch(viewerUrl).then((r) => r.blob());
     downloadBlob(blob, `curse-${safeFileName(viewer.input.name)}-${viewer.archiveId}.png`);
+    track('certificate-download', 'Certificate downloaded');
   }, [viewer, viewerUrl]);
 
   const replayViewer = useCallback(() => {
