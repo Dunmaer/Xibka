@@ -1,4 +1,6 @@
-# Проклинатель Online · The Curser Online
+# Infernal Certificate
+
+(раньше «Проклинатель Online · The Curser Online»)
 
 Страница-игра, где проклинают. Посетитель пишет имя, причину и наказание. Бумажка падает на алтарь,
 алтарь затягивает её в вихрь, над ним раскрывается многослойный магический круг, и в конце из
@@ -16,20 +18,47 @@ npm run build        # production-сборка в dist/
 npm run preview      # посмотреть собранную версию
 ```
 
-Нужен Node.js 20+.
+Нужен Node.js 22 (или 20.19+).
 
-## Деплой
+## Публикация
 
-Сайт полностью статический: надо собрать и выложить папку `dist/`.
+Сайт полностью статический: собирается в папку `dist/`, все пути относительные (`base: './'`),
+поэтому он работает и из подпапки, и внутри iframe.
+
+### GitHub Pages (https://dunmaer.github.io/Xibka/)
+
+`.github/workflows/pages.yml` собирает и публикует сайт при каждом пуше в ветку
+`claude/elegant-maxwell-kh7983` (и в `main`), а также по кнопке **Run workflow** во вкладке Actions.
+Один раз в настройках репозитория:
+1. **Settings → General → Danger Zone → Change visibility → Public** (на бесплатном тарифе Pages
+   работает только для публичных репозиториев);
+2. **Settings → Pages → Build and deployment → Source: GitHub Actions**;
+3. если деплой из этой ветки отклонён: **Settings → Environments → github-pages → Deployment
+   branches** → добавить `claude/elegant-maxwell-kh7983`.
+
+Адрес сайта для canonical, превью в соцсетях, `robots.txt` и `sitemap.xml` задаётся в
+`vite.config.ts` (`SITE_URL`). В `index.html` есть описание для поисковиков, которое видно и без
+JavaScript, и разметка schema.org (VideoGame). `robots.txt` разрешает всех, в том числе
+OAI-SearchBot (поиск ChatGPT).
+
+### itch.io
+
+```bash
+npm run build:itch     # → папка dist-itch/, без привязки к адресу
+```
+
+Заархивируйте **содержимое** `dist-itch/` (так, чтобы `index.html` лежал в корне ZIP) и загрузите
+на itch.io как HTML-проект.
+
+### Другие хостинги
 
 | Хостинг | Настройки |
 |---|---|
 | **Vercel** | Import Git Repository → Framework: *Vite* → Build: `npm run build` → Output: `dist` |
-| **Cloudflare Pages** | Build command: `npm run build` → Build output: `dist` → переменная `NODE_VERSION=20` |
+| **Cloudflare Pages** | Build command: `npm run build` → Build output: `dist` → переменная `NODE_VERSION=22` |
 | **Netlify** | Build command: `npm run build` → Publish directory: `dist` |
 
-В `vite.config.ts` стоит `base: './'`, поэтому сборка работает и из подпапки (например GitHub Pages).
-Видео весят ~5 МБ (MP4) и ~2.5 МБ (WebM) каждое, ограничения хостингов на размер файла не нарушаются.
+Для них задайте свой адрес: переменная окружения `SITE_URL=https://ваш-адрес/`.
 
 ## Как устроен ритуал
 

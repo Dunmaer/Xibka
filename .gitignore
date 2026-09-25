@@ -22,3 +22,4 @@ dist/
 *.local
 .vite/
 *.tsbuildinfo
+dist-itch

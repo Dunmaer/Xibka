@@ -4,16 +4,37 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#0a0504" />
-    <meta name="description" content="Proklinatel Online — write a name on the paper and let the infernal altar seal the curse." />
-    <meta property="og:title" content="The Curser Online" />
-    <meta property="og:description" content="Write a name on the paper. The altar will do the rest." />
+    <title>Infernal Certificate — seal a curse at the infernal altar</title>
+    <meta name="description" content="Infernal Certificate is a free browser ritual: write a name, the reason and the punishment, drop the note on the altar and watch a unique magic circle seal the curse. Download your certificate of curse. English, Russian, Armenian." />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Infernal Certificate" />
+    <meta property="og:title" content="Infernal Certificate" />
+    <meta property="og:description" content="Write a name on the paper. The altar will do the rest: a unique magic circle and a sealed certificate of curse." />
     <meta property="og:image" content="./media/poster.jpg" />
+    <meta name="twitter:card" content="summary_large_image" />
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
     <link rel="preload" href="./media/poster.jpg" as="image" />
-    <title>The Curser Online</title>
+    <style>
+      /* shown until the app starts (and to crawlers that do not run scripts) */
+      html, body { margin: 0; background: #0a0504; }
+      .boot { min-height: 100vh; display: grid; place-content: center; gap: 12px; padding: 24px; box-sizing: border-box;
+        text-align: center; color: #d9b98a; font: 17px/1.5 Georgia, serif; }
+      .boot h1 { margin: 0; font-size: 32px; letter-spacing: .06em; color: #e9a55a; }
+      .boot p { margin: 0 auto; max-width: 560px; opacity: .8; }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <main class="boot">
+        <h1>Infernal Certificate</h1>
+        <p>A browser ritual. Write a name, the reason and the punishment on a piece of paper and
+          drop it on the infernal altar. The altar pulls it into a vortex, a unique magic circle is
+          grown from your words, and a certificate of curse with a wax seal is born. Download it or
+          keep it in the archive on your device. Free, no sign-up, in English, Russian and Armenian.</p>
+        <p>Проклятие в браузере: напиши имя, причину и наказание — алтарь выдаст сертификат проклятия с печатью.</p>
+      </main>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

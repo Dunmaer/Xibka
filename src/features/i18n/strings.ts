@@ -11,7 +11,7 @@ export const LANG_NAMES: Record<Lang, string> = {
 };
 
 const en = {
-  siteTitle: 'The Curser Online',
+  siteTitle: 'Infernal Certificate',
   siteTagline: 'Write a name on the paper. The altar will do the rest.',
   nameLabel: 'Give a name',
   namePlaceholder: 'Who is it?',
@@ -61,7 +61,7 @@ export type StringKey = keyof typeof en;
 export type Dict = Record<StringKey, string>;
 
 const ru: Dict = {
-  siteTitle: 'Проклинатель Online',
+  siteTitle: 'Infernal Certificate',
   siteTagline: 'Напиши имя на бумаге. Остальное сделает алтарь.',
   nameLabel: 'Дай имя',
   namePlaceholder: 'Кто это?',
@@ -108,7 +108,7 @@ const ru: Dict = {
 };
 
 const hy: Dict = {
-  siteTitle: 'Անեծող Online',
+  siteTitle: 'Infernal Certificate',
   siteTagline: 'Գրիր անունը թղթին։ Մնացածը զոհասեղանը կանի։',
   nameLabel: 'Տուր անունը',
   namePlaceholder: 'Ո՞վ է նա',
