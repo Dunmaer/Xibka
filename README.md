@@ -59,9 +59,9 @@ npm run build:itch     # → папка dist-itch/, без привязки к �
 Заархивируйте **содержимое** `dist-itch/` (так, чтобы `index.html` лежал в корне ZIP) и загрузите
 на itch.io как HTML-проект.
 
-Или без компьютера: при каждом обновлении GitHub собирает его сам. **Actions → последний запуск
-«Deploy to GitHub Pages» → внизу Artifacts → `infernal-certificate-itch`** — скачивается готовый
-ZIP (хранится 90 дней).
+Или без компьютера: при каждом обновлении GitHub собирает его сам и выкладывает по постоянной
+ссылке (скачивается без входа в GitHub):
+https://github.com/Dunmaer/Xibka/releases/download/itch-latest/infernal-certificate-itch.zip
 
 ### Другие хостинги
 

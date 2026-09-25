@@ -33,9 +33,12 @@ jobs:
         with:
           path: dist
 
-  # the same game packed for itch.io: Actions → the latest run → Artifacts → infernal-certificate-itch
+  # the same game packed for itch.io, always at one public link:
+  # https://github.com/Dunmaer/Xibka/releases/download/itch-latest/infernal-certificate-itch.zip
   itch:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -44,11 +47,15 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build:itch
-      - uses: actions/upload-artifact@v4
-        with:
-          name: infernal-certificate-itch
-          path: dist-itch
-          retention-days: 90
+      - name: Publish the ZIP
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          (cd dist-itch && zip -qr ../infernal-certificate-itch.zip .)
+          gh release view itch-latest >/dev/null 2>&1 || gh release create itch-latest \
+            --title "Infernal Certificate for itch.io" --latest=false \
+            --notes "Upload infernal-certificate-itch.zip to itch.io as an HTML project. Rebuilt on every update of the site."
+          gh release upload itch-latest infernal-certificate-itch.zip --clobber
 
   deploy:
     needs: build
