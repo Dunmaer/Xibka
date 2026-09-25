@@ -19,7 +19,10 @@
       /* shown until the app starts (and to crawlers that do not run scripts) */
       html, body { margin: 0; background: #0a0504; }
       .boot { min-height: 100vh; display: grid; place-content: center; gap: 12px; padding: 24px; box-sizing: border-box;
-        text-align: center; color: #d9b98a; font: 17px/1.5 Georgia, serif; }
+        text-align: center; color: #d9b98a; font: 17px/1.5 Georgia, serif;
+        /* only shows if the game takes long to load (or cannot start); a fast load never flashes it */
+        animation: boot-in 0.8s ease 2.5s both; }
+      @keyframes boot-in { from { opacity: 0; } to { opacity: 1; } }
       .boot h1 { margin: 0; font-size: 32px; letter-spacing: .06em; color: #e9a55a; }
       .boot p { margin: 0 auto; max-width: 560px; opacity: .8; }
     </style>
