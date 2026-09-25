@@ -33,6 +33,23 @@ jobs:
         with:
           path: dist
 
+  # the same game packed for itch.io: Actions → the latest run → Artifacts → infernal-certificate-itch
+  itch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build:itch
+      - uses: actions/upload-artifact@v4
+        with:
+          name: infernal-certificate-itch
+          path: dist-itch
+          retention-days: 90
+
   deploy:
     needs: build
     runs-on: ubuntu-latest
