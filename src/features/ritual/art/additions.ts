@@ -1,5 +1,4 @@
-// Additions around the classic circle: sometimes the circle grows wings to both sides, or a
-// spiral winds out of its rim. The circle itself stays exactly as it is; an addition only
+// Additions around the classic circle: sometimes a spiral winds out of its rim. The circle itself stays exactly as it is; an addition only
 // fills the sides of the screen around it (the certificate covers the middle at the end).
 //
 // Each addition is made of its own layers (they sit at their own depth); the emblems at their
@@ -11,20 +10,19 @@ import { drawSign, EMBLEM_SIGNS, ORNATE_SIGNS } from '../../../utils/glyphs/sign
 import { drawSigil, type Sigil } from './sigils';
 import type { GeneratorInput, Pen } from './generator';
 import {
-  TAU, CAPS, arc, cap, circle, crescent, disc, dot, glyphPath, line, link, lotus, miniCircle, node,
-  offsetPath, pathAt, pathLength, polar, polygonPts, quadPts, starPoly, strokePath, strokePoly, sunRays, trimPath,
+  TAU, CAPS, arc, cap, circle, crescent, disc, dot, glyphPath, line, link, lotus, miniCircle,
+  offsetPath, pathAt, pathLength, polar, polygonPts, starPoly, strokePath, strokePoly, sunRays, trimPath,
   type CapKind, type Pt,
 } from './primitives';
 
-export type Addition = 'wings' | 'spiral';
+export type Addition = 'spiral';
 
-/** About a third of the circles stay alone, the others get wings or a spiral. */
+/** Some circles get a spiral winding out of their rim. */
 export function pickAddition(r: Rng): Addition | null {
   const forced = typeof location !== 'undefined' && import.meta.env.DEV ? new URLSearchParams(location.search).get('addition') : null;
-  if (forced === 'wings' || forced === 'spiral') return forced;
+  if (forced === 'spiral') return forced;
   if (forced === 'none') return null;
-  const x = r();
-  return x < 0.36 ? 'wings' : x < 0.7 ? 'spiral' : null;
+  return r() < 0.4 ? 'spiral' : null;
 }
 
 export interface AddOpt {
@@ -44,7 +42,6 @@ export interface Kit {
 
 const seedOf = (r: Rng) => r.int(1, 2 ** 30);
 
-const add2 = (a: Pt, b: Pt): Pt => [a[0] + b[0], a[1] + b[1]];
 
 type EmblemKind =
   | 'sigil' | 'sign' | 'ornate' | 'star' | 'moonStar' | 'eye' | 'eyeTri' | 'sun' | 'lotus' | 'letter' | 'hexagram'
@@ -292,105 +289,6 @@ function pathBand(p: Pen, pts: Pt[], h: number, style: BandStyle, glyphs: number
   }
 }
 
-// ------------------------------------------------------------------ wings
-
-/** Wings spreading from the rim of the circle (radius R) to both edges of the screen. */
-function wings(r: Rng, K: Kit, R: number) {
-  const style = r.pick(['feathers', 'feathers', 'blades', 'bat'] as const);
-  const root = R * 0.94;
-  const span = r.range(1.62, 1.75);
-  const lift = r.range(-0.42, 0.05);
-  const len = span - root;
-  const X = (u: number) => root + len * u;
-  const n = style === 'blades' ? r.int(7, 11) : r.int(6, 9);
-  const lower = r.chance(0.5);
-  const seed = seedOf(r);
-  const tipE = pickEmblem(r, ANY);
-  const bone = quadPts([root, -0.08], [X(0.45), lift * 0.8 - 0.28], [span, lift], 40);
-  const draw = (sx: 1 | -1) => (p: Pen) => {
-    const lr = makeRng(seed);
-    const M = (pts: Pt[]): Pt[] => pts.map(([x, y]) => [x * sx, y] as Pt);
-    // letters must not be mirrored: on the left wing the path runs towards the middle
-    const band = (pts: Pt[], h: number, st: BandStyle, w: number[]) => pathBand(p, sx > 0 ? M(pts) : M(pts).reverse(), h, st, w);
-    if (style === 'feathers') {
-      band(bone, 0.055, 'text', K.words[0]);
-      for (const row of [0, 1]) {
-        for (let i = 0; i < n; i++) {
-          const t = 0.08 + (i / (n - 1)) * 0.92;
-          const b = pathAt(bone, t * pathLength(bone));
-          const fl = (row ? 0.16 : 0.26) + (row ? 0.14 : 0.34) * t;
-          const a = Math.PI / 2 - 0.2 - t * 0.75 + row * 0.1;
-          const tip = add2([b.x, b.y], polar(fl * lr.range(0.9, 1.05), a));
-          p.ink(row ? 'c' : 'a');
-          strokePath(p, M(quadPts([b.x, b.y], add2([b.x, b.y], polar(fl * 0.5, a - 0.25)), tip, 16)), row ? 0.8 : 1.2, 0.95);
-          strokePath(p, M(quadPts([b.x, b.y], add2([b.x, b.y], polar(fl * 0.5, a + 0.12)), tip, 16)), 0.6, 0.7);
-          dot(p, tip[0] * sx, tip[1], 0.011, 1);
-        }
-      }
-    } else if (style === 'blades') {
-      band(bone, 0.045, 'double', []);
-      for (let i = 0; i < n; i++) {
-        const t = i / (n - 1);
-        const a = -0.95 + t * 1.5 + lift * 0.3;
-        const bl = len * (0.55 + 0.45 * Math.sin((1 - t) * Math.PI * 0.9)) * lr.range(0.9, 1.05);
-        const base: Pt = [root + 0.03, -0.05 + 0.02 * i];
-        const tip = add2(base, polar(bl, a));
-        const w = 0.022 * (1 - t * 0.4);
-        const nx = -Math.sin(a) * w;
-        const ny = Math.cos(a) * w;
-        p.ink(i % 2 ? 'c' : 'a');
-        p.ctx.globalAlpha = 0.9;
-        p.ctx.beginPath();
-        p.ctx.moveTo((base[0] + nx) * sx, base[1] + ny);
-        p.ctx.lineTo(tip[0] * sx, tip[1]);
-        p.ctx.lineTo((base[0] - nx) * sx, base[1] - ny);
-        p.ctx.closePath();
-        p.ctx.fill();
-        const g = add2(base, polar(0.08, a));
-        line(p, (g[0] + nx * 1.8) * sx, g[1] + ny * 1.8, (g[0] - nx * 1.8) * sx, g[1] - ny * 1.8, 1, 0.9);
-      }
-    } else {
-      // bat: leading edge, finger bones and a scalloped trailing edge
-      const wrist: Pt = [X(0.4), lift * 0.5 - 0.32];
-      const lead = quadPts([root, -0.1], [X(0.15), -0.36 + lift * 0.3], wrist, 20).concat(quadPts(wrist, [X(0.75), lift - 0.3], [span, lift], 24).slice(1));
-      band(lead, 0.05, 'text', K.words[2]);
-      const tips: Pt[] = [[span, lift], [X(0.88), lift + 0.4], [X(0.62), 0.5], [X(0.35), 0.46], [root + 0.02, 0.2]];
-      p.ink('a');
-      for (const tp of tips.slice(1, 4)) line(p, wrist[0] * sx, wrist[1], tp[0] * sx, tp[1], 1.1, 0.95);
-      p.ink('c');
-      for (let i = 0; i < tips.length - 1; i++) {
-        const a = tips[i];
-        const b = tips[i + 1];
-        strokePath(p, M(quadPts(a, [(a[0] + b[0]) / 2 - 0.05, (a[1] + b[1]) / 2 - 0.08], b, 16)), 1.2, 1);
-        dot(p, a[0] * sx, a[1], 0.014, 1);
-      }
-      node(p, wrist[0] * sx, wrist[1], 0.022, true);
-    }
-    if (lower) {
-      // a smaller lower wing
-      for (let i = 0; i < 4; i++) {
-        const t = i / 3;
-        const pts = quadPts([root * 0.98, 0.18 + i * 0.03], [X(0.3 + t * 0.1), 0.34 + t * 0.12], [X(0.5 + t * 0.2), 0.6 + t * 0.1], 24);
-        if (i === 2) band(pts, 0.04, 'text', K.words[1]);
-        else {
-          p.ink('a');
-          strokePath(p, M(pts), 1 - t * 0.2, 0.9);
-          p.ink('c');
-          const e = pts[pts.length - 1];
-          dot(p, e[0] * sx, e[1], 0.012, 1);
-        }
-      }
-    }
-    // a sign at the tip of the wing
-    p.ctx.save();
-    p.ctx.translate(span * sx, lift - 0.12);
-    drawEmblem(p, K, tipE, 0.06);
-    p.ctx.restore();
-  };
-  K.add('wingR', span + 0.12, 1, draw(1));
-  K.add('wingL', span + 0.12, 1, draw(-1));
-}
-
 // ------------------------------------------------------------------ spiral
 
 /** Arms winding out of the rim of the circle (radius R), turning slowly around it. */
@@ -471,7 +369,6 @@ function spiral(r: Rng, K: Kit, R: number) {
 }
 
 /** Grows an addition around the classic circle (the circle's rim has radius about 1). */
-export function growAddition(kind: Addition, r: Rng, K: Kit) {
-  if (kind === 'wings') wings(r, K, 1);
-  else spiral(r, K, 1);
+export function growAddition(_kind: Addition, r: Rng, K: Kit) {
+  spiral(r, K, 1);
 }
