@@ -4,6 +4,7 @@ import paperUrl from '../../../assets/paper.webp';
 import type { CurseInput } from '../../../utils/seed/seed';
 import type { Dict } from '../../i18n/strings';
 import { toGlyphs } from '../../../utils/glyphs/translit';
+import { drawSignature, signatureGlyphs } from './signature';
 import { drawGlyph, glyphWidth } from '../../../utils/glyphs/glyphLibrary';
 import { loadImage } from '../../../utils/image';
 
@@ -110,23 +111,11 @@ export async function renderPaper(input: CurseInput, t: Dict): Promise<PaperArt>
   writeField(t.paperPunishment, input.punishment, 76, 2);
 
   // A blood-red "signature": the first letters of the name in the infernal script.
-  const sig = toGlyphs(input.name).filter((g) => g >= 0).slice(0, 4);
+  const sig = signatureGlyphs(input.name);
   ctx.save();
-  ctx.fillStyle = 'rgba(120, 8, 6, 0.85)';
   ctx.translate(RIGHT_X - 70 - sig.length * 46, RULES[11] - 30);
   ctx.rotate(-0.08);
-  sig.forEach((g, i) => {
-    ctx.save();
-    ctx.translate(i * 46, 0);
-    drawGlyph(ctx, g, 82);
-    ctx.restore();
-  });
-  ctx.strokeStyle = 'rgba(120, 8, 6, 0.7)';
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(-30, 50);
-  ctx.bezierCurveTo(60, 70, sig.length * 30, 30, sig.length * 46 + 20, 56);
-  ctx.stroke();
+  drawSignature(ctx, sig);
   ctx.restore();
 
   // Rune mask: the name + punishment in infernal letters, written big across the sheet.

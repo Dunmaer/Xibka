@@ -63,6 +63,7 @@ const en = {
   pictureRemove: 'Remove the picture',
   pictureHint: 'Stays on your device',
   bornLabel: 'Born',
+  birthCurse: 'Cursed be the day you were born, down to its very roots, and every day to come.',
 };
 
 export type StringKey = keyof typeof en;
@@ -121,6 +122,7 @@ const ru: Dict = {
   pictureRemove: 'Убрать картинку',
   pictureHint: 'Остаётся на вашем устройстве',
   bornLabel: 'Дата рождения',
+  birthCurse: 'Да будет проклят день твоего рождения до самых корней — и всё твоё будущее.',
 };
 
 const hy: Dict = {
@@ -176,6 +178,7 @@ const hy: Dict = {
   pictureRemove: 'Հեռացնել նկարը',
   pictureHint: 'Մնում է ձեր սարքում',
   bornLabel: 'Ծնվել է',
+  birthCurse: 'Թող անիծված լինի քո ծննդյան օրը՝ մինչև արմատները, և քո ողջ ապագան։',
 };
 
 export const STRINGS: Record<Lang, Dict> = { en, ru, hy };

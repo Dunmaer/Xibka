@@ -6,8 +6,8 @@ import { DATE_LOCALE, STRINGS, type Lang } from '../i18n/strings';
 import type { RitualParams } from '../ritual/params';
 import { drawFlatCircle } from '../ritual/art/circleArt';
 import { hashString, makeRng } from '../../utils/seed/seed';
-import { generateCircle } from '../ritual/art/generator';
 import { drawGlyph } from '../../utils/glyphs/glyphLibrary';
+import { drawSignature, signatureGlyphs, signatureWidth } from '../ritual/art/signature';
 import { dateToGlyphs } from '../../utils/glyphs/translit';
 import { decode } from '../../utils/photo';
 import { cssColor } from '../ritual/art/palette';
@@ -27,11 +27,13 @@ export interface CertificateData {
   photo?: Blob | null;
 }
 
-/** Where the portrait goes (left of the target's name) when a picture was added. */
-const PORTRAIT = { x: 172, y: 376, w: 176, h: 222 };
-/** The small birth seal (left of the wax seal) and the infernal signature (right of it). */
-const BIRTH_SEAL = { x: 292, y: 1088, r: 66 };
-const SIGNATURE = { x: 722, y: 1090, w: 176 };
+/** The portrait (left of the target's name) when a picture was added; its top is computed. */
+const PORTRAIT = { x: 172, w: 176, h: 222 };
+/** Right of the wax seal: the signature, over the small birth stamp. */
+const SIGNATURE = { x: 722, y: 1082 };
+const BIRTH_STAMP = { x: 718, y: 1088, r: 60 };
+/** Left of the wax seal: the date of birth and its curse. */
+const BIRTH_NOTE = { x: 270, y: 1040, w: 184 };
 
 const INK = '#2e1a12';
 const INK_SOFT = 'rgba(58, 34, 22, 0.86)';
@@ -357,7 +359,7 @@ export async function renderCertificate(data: CertificateData, scale = 1.5): Pro
 export async function renderCertificateLayers(data: CertificateData, scale = 1.5): Promise<CertificateLayers> {
   const { params: P, lang } = data;
   const t = STRINGS[lang];
-  await ensureFonts(lang, [P.input.name, P.input.reason, P.input.punishment, t.bornLabel, '0123456789'].join(' '));
+  await ensureFonts(lang, [P.input.name, P.input.reason, P.input.punishment, t.bornLabel, t.birthCurse, '0123456789'].join(' '));
   const bg = await loadImage(certificateUrl);
   const S = scale;
   const canvas = document.createElement('canvas');
@@ -403,45 +405,45 @@ export async function renderCertificateLayers(data: CertificateData, scale = 1.5
   inkText(ctx, t.certificateIntro, cx, 340, INK_SOFT);
 
   let y = 392;
-  // With a picture, the target, the birthday and the reason stand in a column right of it.
+  // With a picture, the target and the reason stand in a column right of it, and the two are
+  // centred together between the intro line and the punishment.
   const photo = data.photo ? await decode(data.photo).catch(() => null) : null;
   const colL = photo ? PORTRAIT.x + PORTRAIT.w + 26 : CONTENT.left;
   const colX = (colL + CONTENT.right) / 2;
   const colW = CONTENT.right - colL;
+  const nameFit = fitBlock(ctx, P.input.name, colW, 2, photo ? 50 : 56, 26, (s) => `700 ${s}px ${FONT.body}`);
+  const reasonFit = fitBlock(ctx, P.input.reason, colW - 30, 4, 30, 17, (s) => `italic 500 ${s}px ${FONT.body}`);
+  /** Target + reason, from the first label's baseline; `draw = false` only measures. */
+  const column = (y0: number, draw: boolean) => {
+    let yy = y0;
+    if (draw) label(ctx, t.targetLabel, colX, yy, 17, FONT.label);
+    ctx.font = `700 ${nameFit.size}px ${FONT.body}`;
+    yy += nameFit.size * 0.95 + 6;
+    for (const ln of nameFit.lines) {
+      if (draw) inkText(ctx, ln, colX, yy, INK);
+      yy += nameFit.size * 1.02;
+    }
+    yy += 18;
+    if (draw) label(ctx, t.reasonFieldLabel, colX, yy, 17, FONT.label);
+    ctx.font = `italic 500 ${reasonFit.size}px ${FONT.body}`;
+    yy += reasonFit.size * 1.05 + 4;
+    reasonFit.lines.forEach((ln, i) => {
+      if (draw) inkText(ctx, ln, colX, yy, INK_SOFT);
+      if (i < reasonFit.lines.length - 1) yy += reasonFit.size * 1.18;
+    });
+    return yy; // baseline of the last line
+  };
   if (photo) {
-    drawPortrait(ctx, photo.source, photo.width, photo.height, S);
+    const top = 362; // just under the intro line
+    const colH = column(0, false) + 14 + 8; // + label cap height + descenders
+    const blockH = Math.max(colH, PORTRAIT.h + 18);
+    drawPortrait(ctx, photo.source, photo.width, photo.height, S, top + (blockH - PORTRAIT.h) / 2);
     photo.close();
-    y = PORTRAIT.y + 20;
+    column(top + (blockH - colH) / 2 + 14, true);
+    y = top + blockH + 34;
+  } else {
+    y = column(y, true) + reasonFit.size * 1.18 + 22;
   }
-
-  // Target
-  label(ctx, t.targetLabel, colX, y, 17, FONT.label);
-  const name = fitBlock(ctx, P.input.name, colW, 2, photo ? 50 : 56, 26, (s) => `700 ${s}px ${FONT.body}`);
-  ctx.font = `700 ${name.size}px ${FONT.body}`;
-  y += name.size * 0.95 + 6;
-  for (const ln of name.lines) {
-    inkText(ctx, ln, colX, y, INK);
-    y += name.size * 1.02;
-  }
-  // Date of birth, written plainly under the name
-  if (P.input.birthday) {
-    ctx.font = `italic 500 22px ${FONT.body}`;
-    inkText(ctx, `${t.bornLabel}: ${formatBirth(P.input.birthday, lang)}`, colX, y + 4, INK_SOFT);
-    y += 30;
-  }
-  y += 18;
-
-  // Reason
-  label(ctx, t.reasonFieldLabel, colX, y, 17, FONT.label);
-  const reason = fitBlock(ctx, P.input.reason, colW - 30, 4, 30, 17, (s) => `italic 500 ${s}px ${FONT.body}`);
-  ctx.font = `italic 500 ${reason.size}px ${FONT.body}`;
-  y += reason.size * 1.05 + 4;
-  for (const ln of reason.lines) {
-    inkText(ctx, ln, colX, y, INK_SOFT);
-    y += reason.size * 1.18;
-  }
-  y += 22;
-  if (photo) y = Math.max(y, PORTRAIT.y + PORTRAIT.h + 34);
 
   // Punishment — the loudest thing on the page
   const pBottom = 858;
@@ -483,10 +485,20 @@ export async function renderCertificateLayers(data: CertificateData, scale = 1.5
   ctx.font = `italic 600 ${al}px ${FONT.body}`;
   inkText(ctx, t.archiveLine, cx, 962, '#6b1410');
 
-  // The birthday adds its own small seal and a signature in the infernal script
+  // Right of the wax seal: the small stamp of the birthday under the signature from the note;
+  // left of it: the date of birth and its curse
   if (P.input.birthday) {
-    birthSeal(ctx, P.input.birthday, S);
-    infernalSignature(ctx, P.input.birthday);
+    birthStamp(ctx, P.input.birthday, S);
+    birthNote(ctx, P.input.birthday, lang);
+  }
+  const sig = signatureGlyphs(P.input.name);
+  if (sig.length) {
+    const unit = 0.5;
+    ctx.save();
+    ctx.translate(SIGNATURE.x - signatureWidth(sig, unit) / 2, SIGNATURE.y);
+    ctx.rotate(-0.08);
+    drawSignature(ctx, sig, unit);
+    ctx.restore();
   }
 
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -555,8 +567,8 @@ export async function renderCertificateLayers(data: CertificateData, scale = 1.5
 }
 
 /** The picture in an oval cameo: toned like an old print, soaked into the paper, framed. */
-function drawPortrait(ctx: CanvasRenderingContext2D, src: CanvasImageSource, iw: number, ih: number, S: number) {
-  const { x, y, w, h } = PORTRAIT;
+function drawPortrait(ctx: CanvasRenderingContext2D, src: CanvasImageSource, iw: number, ih: number, S: number, y: number) {
+  const { x, w, h } = PORTRAIT;
   const c = document.createElement('canvas');
   c.width = Math.round(w * S);
   c.height = Math.round(h * S);
@@ -590,9 +602,17 @@ function drawPortrait(ctx: CanvasRenderingContext2D, src: CanvasImageSource, iw:
   g.ellipse(c.width / 2, c.height / 2, c.width / 2 - 1, c.height / 2 - 1, 0, 0, Math.PI * 2);
   g.fill();
 
+  // a clean paper ground first (the circle's watermark must not run across the face), then the
+  // print, slightly soaked into the sheet
   ctx.save();
+  ctx.fillStyle = 'rgba(240, 225, 196, 0.92)';
+  ctx.beginPath();
+  ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 0.94;
+  ctx.drawImage(c, x, y, w, h);
   ctx.globalCompositeOperation = 'multiply';
-  ctx.globalAlpha = 0.92;
+  ctx.globalAlpha = 0.18;
   ctx.drawImage(c, x, y, w, h);
   ctx.restore();
   // frame: two ink ovals and small diamonds at the ends
@@ -620,59 +640,97 @@ function drawPortrait(ctx: CanvasRenderingContext2D, src: CanvasImageSource, iw:
   ctx.restore();
 }
 
-/** A small, translucent magic circle grown from the date of birth (its own seed and colour). */
-function birthSeal(ctx: CanvasRenderingContext2D, birthday: string, S: number) {
-  const glyphs = dateToGlyphs(birthday);
-  const design = generateCircle({ seed: hashString(`birth␟${birthday}`), name: glyphs, reason: glyphs, punishment: glyphs });
-  const { x, y, r } = BIRTH_SEAL;
-  const unit = r / 1.45; // leaves room for satellites and blades
+/**
+ * The birthday's own small stamp: a deliberately simple seal (it is tiny) grown from the
+ * digits of the date — a ring of its letters, a star, a centre — pressed a little askew.
+ */
+function birthStamp(ctx: CanvasRenderingContext2D, birthday: string, S: number) {
+  const rng = makeRng(hashString(`birth␟${birthday}`));
+  const [, mm, dd] = birthday.split('-').map(Number);
+  const glyphs = dateToGlyphs(birthday).filter((g) => g >= 0);
+  const hue = rng.range(0, 360);
+  const { x, y, r } = BIRTH_STAMP;
   const c = document.createElement('canvas');
-  c.width = c.height = Math.ceil(r * 2.1 * S);
+  c.width = c.height = Math.ceil(r * 2.3 * S);
   const g = c.getContext('2d')!;
   g.translate(c.width / 2, c.height / 2);
-  g.scale(unit * S, unit * S);
-  const p = design.palette;
-  const ink = `rgb(${Math.round(p.a[0] * 120)}, ${Math.round(p.a[1] * 120)}, ${Math.round(p.a[2] * 120)})`;
-  g.strokeStyle = g.fillStyle = ink;
-  g.lineCap = 'round';
-  // the fine detail would only turn to mush this small: frame, figure, core and satellites
-  drawFlatCircle(g, { design }, 0.011, true, (l) => /^(frame$|frameText|figure|core|sat|vtx|med|weave|band0)/.test(l.id));
+  g.scale(S, S);
+  g.rotate(rng.range(-0.45, 0.45));
+  g.strokeStyle = g.fillStyle = `hsl(${hue.toFixed(0)}, 55%, 28%)`;
+  g.lineCap = g.lineJoin = 'round';
+  const ring = (rr: number, w: number) => {
+    g.lineWidth = w;
+    g.beginPath();
+    g.arc(0, 0, rr, 0, Math.PI * 2);
+    g.stroke();
+  };
+  ring(r * 0.97, 2.4);
+  ring(r * 0.9, 1);
+  ring(r * 0.66, 1.4);
+  // the date's letters around the band, upright towards the rim
+  const n = glyphs.length || 1;
+  glyphs.forEach((gl, i) => {
+    g.save();
+    g.rotate((i / n) * Math.PI * 2);
+    g.translate(0, -r * 0.78);
+    drawGlyph(g, gl, r * 0.2);
+    g.restore();
+  });
+  // a star: as many points as the day asks (5..8), turned by the month
+  const pts = 5 + ((dd || 5) % 4);
+  const step = pts >= 7 ? 3 : 2;
+  const R = r * 0.6;
+  const rot = ((mm || 1) / 12) * Math.PI * 2;
+  g.lineWidth = 1.3;
+  g.beginPath();
+  for (let i = 0; i <= pts; i++) {
+    const a = rot + ((i * step) / pts) * Math.PI * 2 - Math.PI / 2;
+    if (i) g.lineTo(Math.cos(a) * R, Math.sin(a) * R);
+    else g.moveTo(Math.cos(a) * R, Math.sin(a) * R);
+  }
+  g.closePath();
+  g.stroke();
+  // centre
+  ring(r * 0.16, 1.4);
+  g.beginPath();
+  g.arc(0, 0, r * 0.05, 0, Math.PI * 2);
+  g.fill();
+  // a worn stamp: the ink did not take everywhere
+  g.globalCompositeOperation = 'destination-out';
+  for (let i = 0; i < 70; i++) {
+    g.globalAlpha = rng.range(0.15, 0.5);
+    g.beginPath();
+    g.arc(rng.range(-r, r), rng.range(-r, r), rng.range(0.6, 2.6), 0, Math.PI * 2);
+    g.fill();
+  }
   ctx.save();
   ctx.globalCompositeOperation = 'multiply';
-  ctx.globalAlpha = 0.7;
+  ctx.globalAlpha = 0.62;
   ctx.drawImage(c, x - c.width / S / 2, y - c.height / S / 2, c.width / S, c.height / S);
   ctx.restore();
 }
 
-/** The birthday signed in infernal letters, with a flourish (like the signature on the note). */
-function infernalSignature(ctx: CanvasRenderingContext2D, birthday: string) {
-  const seq = dateToGlyphs(birthday);
-  const letters = seq.filter((gl) => gl >= 0).length;
-  const gaps = seq.length - letters;
-  const adv = Math.min(26, SIGNATURE.w / (letters + gaps * 0.6));
-  const width = adv * (letters + gaps * 0.6);
+/** Left of the wax seal: "Born:", the date, and a curse on that day. */
+function birthNote(ctx: CanvasRenderingContext2D, birthday: string, lang: Lang) {
+  const t = STRINGS[lang];
+  const { x, w } = BIRTH_NOTE;
+  let y = BIRTH_NOTE.y;
   ctx.save();
-  ctx.translate(SIGNATURE.x - width / 2, SIGNATURE.y);
-  ctx.rotate(-0.07);
-  ctx.fillStyle = 'rgba(120, 8, 6, 0.85)';
-  let x = 0;
-  for (const gl of seq) {
-    if (gl < 0) {
-      x += adv * 0.6;
-      continue;
-    }
-    ctx.save();
-    ctx.translate(x + adv / 2, 0);
-    drawGlyph(ctx, gl, adv * 2);
-    ctx.restore();
-    x += adv;
+  ctx.textAlign = 'center';
+  ctx.font = `italic 600 20px ${FONT.body}`;
+  inkText(ctx, `${t.bornLabel}:`, x, y, LABEL);
+  y += 30;
+  const d = formatBirth(birthday, lang);
+  const ds = fitFont(ctx, d, w, 25, 16, (s) => `700 ${s}px ${FONT.body}`);
+  ctx.font = `700 ${ds}px ${FONT.body}`;
+  inkText(ctx, d, x, y, INK);
+  y += 30;
+  const curse = fitBlock(ctx, t.birthCurse, w, 4, 17, 13, (s) => `italic 500 ${s}px ${FONT.body}`);
+  ctx.font = `italic 500 ${curse.size}px ${FONT.body}`;
+  for (const ln of curse.lines) {
+    inkText(ctx, ln, x, y, '#6b1410');
+    y += curse.size * 1.15;
   }
-  ctx.strokeStyle = 'rgba(120, 8, 6, 0.7)';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(-14, adv * 1.15);
-  ctx.bezierCurveTo(width * 0.3, adv * 1.6, width * 0.7, adv * 0.6, width + 12, adv * 1.25);
-  ctx.stroke();
   ctx.restore();
 }
 
