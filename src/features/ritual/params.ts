@@ -18,6 +18,16 @@ export interface RitualParams {
   lineWeight: number;
 }
 
+/** A tall screen (phones): the large structures are then laid out along the height. */
+function isPortrait() {
+  if (typeof window === 'undefined') return false;
+  if (import.meta.env.DEV) {
+    const q = new URLSearchParams(location.search);
+    if (q.has('portrait')) return q.get('portrait') !== '0';
+  }
+  return window.innerHeight > window.innerWidth;
+}
+
 export function makeRitualParams(input: CurseInput): RitualParams {
   const seed = curseSeed(input);
   const rng = makeRng(seed);
@@ -26,7 +36,7 @@ export function makeRitualParams(input: CurseInput): RitualParams {
     reason: toGlyphs(input.reason),
     punishment: toGlyphs(input.punishment),
   };
-  const design = generateCircle({ seed, ...glyphs });
+  const design = generateCircle({ seed, ...glyphs, portrait: isPortrait() });
   return {
     seed,
     archiveId: archiveId(seed),

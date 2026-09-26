@@ -685,7 +685,7 @@ export function offsetPath(pts: Pt[], d: number): Pt[] {
   });
 }
 
-function pathLength(pts: Pt[]) {
+export function pathLength(pts: Pt[]) {
   let len = 0;
   for (let i = 1; i < pts.length; i++) len += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
   return len;

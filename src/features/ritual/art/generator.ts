@@ -81,6 +81,8 @@ export interface GeneratorInput {
   name: number[];
   reason: number[];
   punishment: number[];
+  /** Tall screen: large structures turn a quarter so their long side runs along the height. */
+  portrait?: boolean;
 }
 
 // ------------------------------------------------------------------ the generator
@@ -153,7 +155,7 @@ export function generateCircle(g: GeneratorInput): CircleDesign {
   let figure = '';
   if (structure !== 'classic') {
     let salt = 0;
-    buildStructure(structure, rng.fork(8), {
+    buildStructure(structure, rng.fork(8), !!g.portrait, {
       g,
       words,
       sigils,

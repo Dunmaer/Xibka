@@ -16,15 +16,26 @@ const grid = document.getElementById('grid')!;
 for (let i = 0; i < N; i++) {
   const s = { name: names[i % names.length] + salt, reason: reasons[(i * 3) % reasons.length], punishment: puns[(i * 5) % puns.length] };
   const P = makeRitualParams(s);
-  const size = 700;
+  // a 16:9 screen as the ritual shows it at the end: frame radius 1 = 0.54 of the height
+  const tall = q.has('portrait');
+  const W = tall ? 390 : 960;
+  const H = tall ? 844 : 540;
   const c = document.createElement('canvas');
-  c.width = c.height = size;
+  c.width = W;
+  c.height = H;
   const ctx = c.getContext('2d')!;
   ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, size, size);
-  ctx.translate(size / 2, size / 2);
-  const k = size / 2 / 1.55;
+  ctx.fillRect(0, 0, W, H);
+  ctx.translate(W / 2, H / 2);
+  const k = tall ? W * 0.78 : H * 0.54;
   ctx.scale(k, k);
+  if (q.has('cert')) {
+    // where the certificate covers the circle at the end
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+    ctx.lineWidth = 1 / k;
+    if (tall) ctx.strokeRect(-0.6, -1.12, 1.2, 1.62);
+    else ctx.strokeRect(-0.54, -0.87, 1.08, 1.5);
+  }
   ctx.lineCap = 'round';
   for (const l of P.design.layers) {
     const pal = l.palette;
