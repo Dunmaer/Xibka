@@ -499,7 +499,25 @@ export async function renderCertificateLayers(data: CertificateData, scale = 1.5
   ctx.textAlign = 'left';
   inkText(ctx, metaL, CONTENT.left + 6, metaY, INK_SOFT);
   ctx.textAlign = 'right';
-  inkText(ctx, metaR, CONTENT.right - 6, metaY, INK_SOFT);
+  if (lang === 'hy' && metaR.includes('№')) {
+    // the "№" keeps its full size; only the Armenian letters around it are set smaller
+    const [before, after] = metaR.split('№');
+    const noFont = `600 ${Math.round(metaSize * 1.2)}px ${FONT.body}`;
+    const small = smallFont(lang, 600, metaSize);
+    ctx.font = small;
+    const wA = ctx.measureText(after).width;
+    ctx.font = noFont;
+    const wNo = ctx.measureText('№').width;
+    let xr = CONTENT.right - 6;
+    ctx.font = small;
+    inkText(ctx, after, xr, metaY, INK_SOFT);
+    xr -= wA;
+    ctx.font = noFont;
+    inkText(ctx, '№', xr, metaY, INK_SOFT);
+    xr -= wNo;
+    ctx.font = small;
+    inkText(ctx, before, xr, metaY, INK_SOFT);
+  } else inkText(ctx, metaR, CONTENT.right - 6, metaY, INK_SOFT);
   ctx.textAlign = 'center';
   divider(ctx, cx, 928, 300, 'rgba(125,12,12,0.7)');
   const al = fitFont(ctx, t.archiveLine, maxW, 21, 14, (s) => smallFont(lang, 600, s, true));
