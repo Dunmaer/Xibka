@@ -31,10 +31,10 @@ export interface CertificateData {
 
 /**
  * The portrait (left of the target's name) when a picture was added, in the oval frame
- * portrait-frame.png (512 x 683); its top is computed. `hole` is the opening of the frame as
- * fractions of its size (centre and half axes), measured on the image.
+ * portrait-frame.png (512 x 683); its top is computed. `hole` is the oval of the picture (it runs under
+ * the ring of the frame) as fractions of the frame's size (centre and half axes).
  */
-const PORTRAIT = { x: 156, w: 228, h: 304, hole: { cx: 0.499, cy: 0.487, rx: 0.335, ry: 0.311 } };
+const PORTRAIT = { x: 156, w: 228, h: 304, hole: { cx: 0.499, cy: 0.4875, rx: 0.343, ry: 0.378 } };
 /** Right of the wax seal: the signature, over the small birth stamp. */
 const SIGNATURE = { x: 704, y: 1076 };
 const BIRTH_STAMP = { x: 728, y: 1098, r: 58 };
@@ -645,10 +645,10 @@ export async function renderCertificateLayers(data: CertificateData, scale = 1.5
 
 /** The picture in an oval cameo: toned like an old print, soaked into the paper, framed. */
 function drawPortrait(ctx: CanvasRenderingContext2D, src: CanvasImageSource, iw: number, ih: number, S: number, fy: number, frame: HTMLImageElement | null) {
-  // the picture fills the opening of the frame (a little under its ring)
+  // the picture's oval runs under the ring of the frame, which is drawn on top
   const hole = PORTRAIT.hole;
-  const w = PORTRAIT.w * hole.rx * 2 * 1.03;
-  const h = PORTRAIT.h * hole.ry * 2 * 1.03;
+  const w = PORTRAIT.w * hole.rx * 2;
+  const h = PORTRAIT.h * hole.ry * 2;
   const x = PORTRAIT.x + PORTRAIT.w * hole.cx - w / 2;
   const y = fy + PORTRAIT.h * hole.cy - h / 2;
   const c = document.createElement('canvas');
