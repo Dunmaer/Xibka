@@ -108,14 +108,14 @@ export class Particles {
   }
 
   /** Radial burst of sparks from a ring (r0 = 0 for a point burst). */
-  burst(n: number, opts: { r0?: number; speed?: number; up?: number; z?: number; heat?: number; size?: number; life?: number } = {}) {
-    const { r0 = 0, speed = 1.6, up = 0.9, z = 0.05, heat = 1, size = 0.012, life = 1.1 } = opts;
+  burst(n: number, opts: { r0?: number; x?: number; y?: number; speed?: number; up?: number; z?: number; heat?: number; size?: number; life?: number } = {}) {
+    const { r0 = 0, x = 0, y = 0, speed = 1.6, up = 0.9, z = 0.05, heat = 1, size = 0.012, life = 1.1 } = opts;
     for (let k = 0; k < n; k++) {
       const a = Math.random() * Math.PI * 2;
       const r = r0 * (0.9 + Math.random() * 0.2);
       const s = speed * (0.35 + Math.random() * 0.9);
       this.emit(
-        Math.cos(a) * r, Math.sin(a) * r, z + Math.random() * 0.05,
+        x + Math.cos(a) * r, y + Math.sin(a) * r, z + Math.random() * 0.05,
         Math.cos(a) * s, Math.sin(a) * s, up * (0.3 + Math.random()),
         life * (0.5 + Math.random() * 0.8), size * (0.5 + Math.random()), heat * (0.7 + Math.random() * 0.5),
       );

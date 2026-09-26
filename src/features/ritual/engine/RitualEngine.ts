@@ -810,6 +810,10 @@ export class RitualEngine {
           y += Math.sin(ga) * a.orbit.r;
           rot += ga + Math.PI / 2;
         }
+        if (a.at) {
+          x += a.at[0];
+          y += a.at[1];
+        }
         if (a.follow !== undefined) rot += this.groups.get(a.follow)?.angle ?? 0;
         // depth compensation at the end: same picture at rest, real depth under the mouse
         const sRel = D / Math.max(D + lockZ - z, 1e-3);
@@ -821,7 +825,7 @@ export class RitualEngine {
         if (this.trigger(F, a.arrive)) {
           l.lockT = 0;
           this.audio?.layerLocked(Math.max(-1, Math.min(1, x / 1.3)), a.radius);
-          this.sparks.burst(Math.round((a.orbit ? 8 : 24) * P.particleDensity), { r0: a.radius * 0.95, speed: 0.35, up: 0.4, z, heat: 0.9, size: 0.008, life: 0.7 });
+          this.sparks.burst(Math.round((a.orbit || a.at ? 8 : 24) * P.particleDensity), { r0: a.radius * 0.95, x: a.orbit || a.at ? x : 0, y: a.orbit || a.at ? y : 0, speed: 0.35, up: 0.4, z, heat: 0.9, size: 0.008, life: 0.7 });
         }
         l.lockT += dt;
         const lock = Math.exp(-l.lockT * 4);

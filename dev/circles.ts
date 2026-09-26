@@ -46,6 +46,7 @@ for (let i = 0; i < N; i++) {
       ctx.translate(Math.cos(l.orbit.a) * l.orbit.r, Math.sin(l.orbit.a) * l.orbit.r);
       ctx.rotate(l.orbit.a + Math.PI / 2);
     }
+    if (l.at) ctx.translate(l.at[0], l.at[1]);
     pen.ink('a');
     ctx.globalAlpha = l.hang ? 0.5 : 1;
     l.draw(pen);
