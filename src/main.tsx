@@ -12,6 +12,7 @@ import '@fontsource/cormorant-sc/500.css';
 import '@fontsource/cormorant-sc/600.css';
 import '@fontsource/cormorant-sc/700.css';
 import '@fontsource/noto-serif-armenian/400.css';
+import '@fontsource/noto-serif-armenian/500.css';
 import '@fontsource/noto-serif-armenian/600.css';
 import '@fontsource/noto-serif-armenian/700.css';
 import '@fontsource/caveat/600.css';

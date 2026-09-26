@@ -7,6 +7,7 @@ import type { RitualParams } from '../ritual/params';
 import { drawFlatCircle } from '../ritual/art/circleArt';
 import { hashString, makeRng } from '../../utils/seed/seed';
 import { drawGlyph } from '../../utils/glyphs/glyphLibrary';
+import { drawSigil, makeSigil } from '../ritual/art/sigils';
 import { drawSignature, signatureGlyphs, signatureWidth } from '../ritual/art/signature';
 import { dateToGlyphs } from '../../utils/glyphs/translit';
 import { decode } from '../../utils/photo';
@@ -30,8 +31,8 @@ export interface CertificateData {
 /** The portrait (left of the target's name) when a picture was added; its top is computed. */
 const PORTRAIT = { x: 172, w: 176, h: 222 };
 /** Right of the wax seal: the signature, over the small birth stamp. */
-const SIGNATURE = { x: 722, y: 1082 };
-const BIRTH_STAMP = { x: 718, y: 1088, r: 60 };
+const SIGNATURE = { x: 704, y: 1076 };
+const BIRTH_STAMP = { x: 728, y: 1098, r: 58 };
 /** Left of the wax seal: the date of birth and its curse. */
 const BIRTH_NOTE = { x: 270, y: 1040, w: 184 };
 
@@ -39,6 +40,16 @@ const INK = '#2e1a12';
 const INK_SOFT = 'rgba(58, 34, 22, 0.86)';
 const CRIMSON = '#7d0c0c';
 const LABEL = '#8b1a12';
+
+/**
+ * Small print (meta row, archive line, birthday note). Armenian comes from Noto Serif Armenian
+ * first — even (lining) digits, a lighter weight and no slant — Cormorant's old-style digits
+ * and the heavy fallback weight made those lines hard to read.
+ */
+function smallFont(lang: Lang, weight: number, size: number, italic = false) {
+  if (lang === 'hy') return `${Math.max(400, weight - 200)} ${size}px "Noto Serif Armenian", "Cormorant Garamond", serif`;
+  return `${italic ? 'italic ' : ''}${weight} ${size}px ${FONT.body}`;
+}
 
 function fitFont(ctx: CanvasRenderingContext2D, text: string, maxW: number, size: number, min: number, font: (s: number) => string) {
   let s = size;
@@ -474,15 +485,23 @@ export async function renderCertificateLayers(data: CertificateData, scale = 1.5
   const date = new Date(data.createdAt);
   const dateStr = formatDate(date, lang);
   const metaY = 905;
-  ctx.font = `600 19px ${FONT.body}`;
+  const metaL = `${t.dateLabel}: ${dateStr}`;
+  const metaR = `${t.archiveIdLabel} ${P.archiveId}`;
+  // both ends of the row must never meet (long Armenian dates): shrink the row until they fit
+  let metaSize = 19;
+  ctx.font = smallFont(lang, 600, metaSize);
+  while (metaSize > 13 && ctx.measureText(metaL).width + ctx.measureText(metaR).width > maxW - 36) {
+    metaSize -= 1;
+    ctx.font = smallFont(lang, 600, metaSize);
+  }
   ctx.textAlign = 'left';
-  inkText(ctx, `${t.dateLabel}: ${dateStr}`, CONTENT.left + 6, metaY, INK_SOFT);
+  inkText(ctx, metaL, CONTENT.left + 6, metaY, INK_SOFT);
   ctx.textAlign = 'right';
-  inkText(ctx, `${t.archiveIdLabel} ${P.archiveId}`, CONTENT.right - 6, metaY, INK_SOFT);
+  inkText(ctx, metaR, CONTENT.right - 6, metaY, INK_SOFT);
   ctx.textAlign = 'center';
   divider(ctx, cx, 928, 300, 'rgba(125,12,12,0.7)');
-  const al = fitFont(ctx, t.archiveLine, maxW, 21, 14, (s) => `italic 600 ${s}px ${FONT.body}`);
-  ctx.font = `italic 600 ${al}px ${FONT.body}`;
+  const al = fitFont(ctx, t.archiveLine, maxW, 21, 14, (s) => smallFont(lang, 600, s, true));
+  ctx.font = smallFont(lang, 600, al, true);
   inkText(ctx, t.archiveLine, cx, 962, '#6b1410');
 
   // Right of the wax seal: the small stamp of the birthday under the signature from the note;
@@ -493,7 +512,7 @@ export async function renderCertificateLayers(data: CertificateData, scale = 1.5
   }
   const sig = signatureGlyphs(P.input.name);
   if (sig.length) {
-    const unit = 0.5;
+    const unit = 0.74;
     ctx.save();
     ctx.translate(SIGNATURE.x - signatureWidth(sig, unit) / 2, SIGNATURE.y);
     ctx.rotate(-0.08);
@@ -581,12 +600,17 @@ function drawPortrait(ctx: CanvasRenderingContext2D, src: CanvasImageSource, iw:
   // sepia tone with a touch of contrast (pixel by pixel: canvas filters are missing in Safari)
   const id = g.getImageData(0, 0, c.width, c.height);
   const d = id.data;
+  // (a faded old colour print: the real colours stay, washed towards sepia)
+  const KEEP = 0.5;
   for (let i = 0; i < d.length; i += 4) {
     let v = (0.3 * d[i] + 0.59 * d[i + 1] + 0.11 * d[i + 2]) / 255;
-    v = Math.min(1, Math.max(0, (v - 0.5) * 1.15 + 0.52));
-    d[i] = 255 * Math.min(1, v * 1.02 + 0.06);
-    d[i + 1] = 255 * Math.min(1, v * 0.86 + 0.04);
-    d[i + 2] = 255 * Math.min(1, v * 0.66 + 0.02);
+    v = Math.min(1, Math.max(0, (v - 0.5) * 1.1 + 0.52));
+    const sr = 255 * Math.min(1, v * 1.02 + 0.06);
+    const sg = 255 * Math.min(1, v * 0.86 + 0.04);
+    const sb = 255 * Math.min(1, v * 0.66 + 0.02);
+    d[i] = sr + (d[i] * 0.92 + 14 - sr) * KEEP;
+    d[i + 1] = sg + (d[i + 1] * 0.9 + 10 - sg) * KEEP;
+    d[i + 2] = sb + (d[i + 2] * 0.85 + 4 - sb) * KEEP;
   }
   g.putImageData(id, 0, 0);
   // burnt, darkening edge
@@ -676,25 +700,120 @@ function birthStamp(ctx: CanvasRenderingContext2D, birthday: string, S: number) 
     drawGlyph(g, gl, r * 0.2);
     g.restore();
   });
-  // a star: as many points as the day asks (5..8), turned by the month
-  const pts = 5 + ((dd || 5) % 4);
-  const step = pts >= 7 ? 3 : 2;
+  // the emblem in the middle: a star, a sun, a moon, a strange sign, an eye, a triangle,
+  // a hexagram or a square — chosen by the date, sometimes with little signs around it
   const R = r * 0.6;
   const rot = ((mm || 1) / 12) * Math.PI * 2;
+  const kind = rng.pick(['star', 'sun', 'moon', 'sigil', 'sigil', 'eye', 'triangle', 'hexagram', 'square'] as const);
+  const poly = (n: number, rr: number, a0: number, step = 1) => {
+    g.beginPath();
+    for (let i = 0; i <= n; i++) {
+      const a = a0 + ((i * step) / n) * Math.PI * 2 - Math.PI / 2;
+      if (i) g.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
+      else g.moveTo(Math.cos(a) * rr, Math.sin(a) * rr);
+    }
+    g.closePath();
+    g.stroke();
+  };
+  const moon = (cx: number, cy: number, mr: number, a: number) => {
+    g.save();
+    g.translate(cx, cy);
+    g.rotate(a);
+    g.beginPath();
+    g.arc(0, 0, mr, Math.PI * 0.25, Math.PI * 1.75);
+    g.arc(mr * 0.45, 0, mr * 0.78, Math.PI * 1.62, Math.PI * 0.38, true);
+    g.closePath();
+    g.fill();
+    g.restore();
+  };
   g.lineWidth = 1.3;
-  g.beginPath();
-  for (let i = 0; i <= pts; i++) {
-    const a = rot + ((i * step) / pts) * Math.PI * 2 - Math.PI / 2;
-    if (i) g.lineTo(Math.cos(a) * R, Math.sin(a) * R);
-    else g.moveTo(Math.cos(a) * R, Math.sin(a) * R);
+  let centre = true;
+  if (kind === 'star') {
+    const pts = 5 + ((dd || 5) % 4);
+    poly(pts, R, rot, pts >= 7 ? 3 : 2);
+  } else if (kind === 'sun') {
+    ring(r * 0.3, 1.4);
+    const rays = rng.pick([8, 12, 16]);
+    for (let i = 0; i < rays; i++) {
+      const a = rot + (i / rays) * Math.PI * 2;
+      const l = i % 2 ? 0.46 : 0.58;
+      g.beginPath();
+      g.moveTo(Math.cos(a) * r * 0.36, Math.sin(a) * r * 0.36);
+      g.lineTo(Math.cos(a) * r * l, Math.sin(a) * r * l);
+      g.stroke();
+    }
+  } else if (kind === 'moon') {
+    moon(0, 0, r * 0.42, rot);
+    centre = false;
+  } else if (kind === 'sigil') {
+    g.save();
+    g.rotate(-rot * 0.2);
+    drawSigil(g, makeSigil(rng.fork(7), 1.1), r * 0.5, 0.9);
+    g.restore();
+    centre = false;
+  } else if (kind === 'eye') {
+    const e = r * 0.5;
+    g.beginPath();
+    g.moveTo(-e, 0);
+    g.quadraticCurveTo(0, -e * 0.75, e, 0);
+    g.quadraticCurveTo(0, e * 0.75, -e, 0);
+    g.stroke();
+    ring(r * 0.16, 1.3);
+    for (let i = -2; i <= 2; i++) {
+      const a = -Math.PI / 2 + i * 0.32;
+      g.beginPath();
+      g.moveTo(Math.cos(a) * e * 0.62, Math.sin(a) * e * 0.62);
+      g.lineTo(Math.cos(a) * e * 0.9, Math.sin(a) * e * 0.9);
+      g.stroke();
+    }
+  } else if (kind === 'triangle') {
+    poly(3, R, rot * 0.25);
+    poly(3, R * 0.5, rot * 0.25 + Math.PI / 3);
+  } else if (kind === 'hexagram') {
+    poly(3, R, rot * 0.3);
+    poly(3, R, rot * 0.3 + Math.PI / 3);
+  } else {
+    poly(4, R, Math.PI / 4 + rot * 0.2);
+    poly(4, R * 0.7, rot * 0.2);
   }
-  g.closePath();
-  g.stroke();
+  // little signs at the cardinal points (moons, dots, crosses, tiny suns)
+  if (rng.chance(0.6)) {
+    const sign = rng.pick(['moon', 'dot', 'cross', 'ring'] as const);
+    const count = rng.pick([2, 3, 4]);
+    for (let i = 0; i < count; i++) {
+      const a = rot + (i / count) * Math.PI * 2;
+      const px = Math.cos(a) * r * 0.5;
+      const py = Math.sin(a) * r * 0.5;
+      if (kind === 'sigil' || kind === 'eye') continue; // they fill the middle already
+      if (sign === 'moon') moon(px, py, r * 0.08, a);
+      else if (sign === 'dot') {
+        g.beginPath();
+        g.arc(px, py, r * 0.04, 0, Math.PI * 2);
+        g.fill();
+      } else if (sign === 'cross') {
+        const q = r * 0.06;
+        g.beginPath();
+        g.moveTo(px - q, py);
+        g.lineTo(px + q, py);
+        g.moveTo(px, py - q);
+        g.lineTo(px, py + q);
+        g.stroke();
+      } else {
+        g.lineWidth = 1;
+        g.beginPath();
+        g.arc(px, py, r * 0.06, 0, Math.PI * 2);
+        g.stroke();
+        g.lineWidth = 1.3;
+      }
+    }
+  }
   // centre
-  ring(r * 0.16, 1.4);
-  g.beginPath();
-  g.arc(0, 0, r * 0.05, 0, Math.PI * 2);
-  g.fill();
+  if (centre) {
+    ring(r * 0.14, 1.3);
+    g.beginPath();
+    g.arc(0, 0, r * 0.045, 0, Math.PI * 2);
+    g.fill();
+  }
   // a worn stamp: the ink did not take everywhere
   g.globalCompositeOperation = 'destination-out';
   for (let i = 0; i < 70; i++) {
@@ -705,7 +824,7 @@ function birthStamp(ctx: CanvasRenderingContext2D, birthday: string, S: number) 
   }
   ctx.save();
   ctx.globalCompositeOperation = 'multiply';
-  ctx.globalAlpha = 0.62;
+  ctx.globalAlpha = 0.5;
   ctx.drawImage(c, x - c.width / S / 2, y - c.height / S / 2, c.width / S, c.height / S);
   ctx.restore();
 }
@@ -717,16 +836,16 @@ function birthNote(ctx: CanvasRenderingContext2D, birthday: string, lang: Lang) 
   let y = BIRTH_NOTE.y;
   ctx.save();
   ctx.textAlign = 'center';
-  ctx.font = `italic 600 20px ${FONT.body}`;
+  ctx.font = smallFont(lang, 600, 20, true);
   inkText(ctx, `${t.bornLabel}:`, x, y, LABEL);
   y += 30;
   const d = formatBirth(birthday, lang);
-  const ds = fitFont(ctx, d, w, 25, 16, (s) => `700 ${s}px ${FONT.body}`);
-  ctx.font = `700 ${ds}px ${FONT.body}`;
+  const ds = fitFont(ctx, d, w, 25, 16, (s) => smallFont(lang, 700, s));
+  ctx.font = smallFont(lang, 700, ds);
   inkText(ctx, d, x, y, INK);
   y += 30;
-  const curse = fitBlock(ctx, t.birthCurse, w, 4, 17, 13, (s) => `italic 500 ${s}px ${FONT.body}`);
-  ctx.font = `italic 500 ${curse.size}px ${FONT.body}`;
+  const curse = fitBlock(ctx, t.birthCurse, w, 4, 17, 13, (s) => smallFont(lang, 500, s, true));
+  ctx.font = smallFont(lang, 500, curse.size, true);
   for (const ln of curse.lines) {
     inkText(ctx, ln, x, y, '#6b1410');
     y += curse.size * 1.15;

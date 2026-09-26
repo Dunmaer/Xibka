@@ -28,6 +28,7 @@ export async function ensureFonts(lang: Lang, text = ''): Promise<void> {
     `600 40px ${FONT.label}`,
     `600 40px ${FONT.hand}`,
     `700 40px ${FONT.hand}`,
+    ...(lang === 'hy' ? ['400 40px "Noto Serif Armenian"', '500 40px "Noto Serif Armenian"'] : []),
   ];
   try {
     await Promise.race([
