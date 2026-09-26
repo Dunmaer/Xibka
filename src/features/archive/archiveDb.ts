@@ -1,6 +1,7 @@
 // The archive of curses lives only in this browser (IndexedDB), nothing is sent anywhere.
-// A record keeps the typed text + language + date; the full certificate is re-drawn from it
-// on demand (it is deterministic), and a small thumbnail is stored for the gallery.
+// A record keeps the typed text (with the optional date of birth) + language + date, and the
+// optional picture; the full certificate is re-drawn from it on demand (it is deterministic),
+// and a small thumbnail is stored for the gallery.
 import type { Lang } from '../i18n/strings';
 import type { CurseInput } from '../../utils/seed/seed';
 
@@ -11,6 +12,8 @@ export interface CurseRecord {
   lang: Lang;
   createdAt: number;
   thumb?: Blob;
+  /** The picture added to the curse (small JPEG), if any. */
+  photo?: Blob;
 }
 
 const DB_NAME = 'proklinatel';
@@ -60,7 +63,7 @@ function lsRead(): CurseRecord[] {
 }
 function lsWrite(list: CurseRecord[]) {
   try {
-    localStorage.setItem(FALLBACK_KEY, JSON.stringify(list.map(({ thumb: _t, ...r }) => r)));
+    localStorage.setItem(FALLBACK_KEY, JSON.stringify(list.map(({ thumb: _t, photo: _p, ...r }) => r)));
   } catch {
     /* ignore */
   }
@@ -76,7 +79,7 @@ export async function saveCurse(rec: CurseRecord): Promise<void> {
     await tx(db, 'readwrite', (s) => s.put(rec));
   } catch {
     // Some browsers refuse Blobs in IDB (old Safari private mode): retry without thumbnail.
-    await tx(db, 'readwrite', (s) => s.put({ ...rec, thumb: undefined }));
+    await tx(db, 'readwrite', (s) => s.put({ ...rec, thumb: undefined, photo: undefined }));
   }
 }
 

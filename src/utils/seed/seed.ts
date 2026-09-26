@@ -4,6 +4,8 @@ export interface CurseInput {
   name: string;
   reason: string;
   punishment: string;
+  /** Date of birth, "YYYY-MM-DD" (optional; it does not change the ritual's seed). */
+  birthday?: string;
 }
 
 const norm = (s: string) => s.normalize('NFC').trim().replace(/\s+/g, ' ').toLowerCase();

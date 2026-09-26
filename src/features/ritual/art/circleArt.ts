@@ -1,13 +1,15 @@
 // Flat (2D) rendering of a curse's circle, used on the certificate.
-import type { RitualParams } from '../params';
-import type { Pen } from './generator';
+import type { CircleDesign, LayerArt, Pen } from './generator';
 
 /**
  * Draws every layer of the circle with the context's current fill/stroke colour.
  * Holes that the layers cut (erase) become transparent, so draw onto a separate canvas
  * and composite it where needed.
  */
-export function drawFlatCircle(ctx: CanvasRenderingContext2D, P: RitualParams, lw: number, skipHanging = true) {
+export function drawFlatCircle(
+  ctx: CanvasRenderingContext2D, P: { design: CircleDesign }, lw: number, skipHanging = true,
+  keep: (l: LayerArt) => boolean = () => true,
+) {
   const color = ctx.strokeStyle;
   const pen: Pen = {
     ctx,
@@ -24,7 +26,7 @@ export function drawFlatCircle(ctx: CanvasRenderingContext2D, P: RitualParams, l
     },
   };
   for (const l of P.design.layers) {
-    if (skipHanging && l.hang) continue;
+    if ((skipHanging && l.hang) || !keep(l)) continue;
     ctx.save();
     if (l.orbit) {
       ctx.translate(Math.cos(l.orbit.a) * l.orbit.r, Math.sin(l.orbit.a) * l.orbit.r);

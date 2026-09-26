@@ -6,6 +6,10 @@ import { DATE_LOCALE, STRINGS, type Lang } from '../i18n/strings';
 import type { RitualParams } from '../ritual/params';
 import { drawFlatCircle } from '../ritual/art/circleArt';
 import { hashString, makeRng } from '../../utils/seed/seed';
+import { generateCircle } from '../ritual/art/generator';
+import { drawGlyph } from '../../utils/glyphs/glyphLibrary';
+import { dateToGlyphs } from '../../utils/glyphs/translit';
+import { decode } from '../../utils/photo';
 import { cssColor } from '../ritual/art/palette';
 import { ensureFonts, FONT } from '../../utils/fonts';
 
@@ -19,7 +23,15 @@ export interface CertificateData {
   params: RitualParams;
   lang: Lang;
   createdAt: number;
+  /** Optional picture of the target: the sheet only makes room for it when there is one. */
+  photo?: Blob | null;
 }
+
+/** Where the portrait goes (left of the target's name) when a picture was added. */
+const PORTRAIT = { x: 172, y: 376, w: 176, h: 222 };
+/** The small birth seal (left of the wax seal) and the infernal signature (right of it). */
+const BIRTH_SEAL = { x: 292, y: 1088, r: 66 };
+const SIGNATURE = { x: 722, y: 1090, w: 176 };
 
 const INK = '#2e1a12';
 const INK_SOFT = 'rgba(58, 34, 22, 0.86)';
@@ -345,7 +357,7 @@ export async function renderCertificate(data: CertificateData, scale = 1.5): Pro
 export async function renderCertificateLayers(data: CertificateData, scale = 1.5): Promise<CertificateLayers> {
   const { params: P, lang } = data;
   const t = STRINGS[lang];
-  await ensureFonts(lang, [P.input.name, P.input.reason, P.input.punishment].join(' '));
+  await ensureFonts(lang, [P.input.name, P.input.reason, P.input.punishment, t.bornLabel, '0123456789'].join(' '));
   const bg = await loadImage(certificateUrl);
   const S = scale;
   const canvas = document.createElement('canvas');
@@ -391,27 +403,45 @@ export async function renderCertificateLayers(data: CertificateData, scale = 1.5
   inkText(ctx, t.certificateIntro, cx, 340, INK_SOFT);
 
   let y = 392;
+  // With a picture, the target, the birthday and the reason stand in a column right of it.
+  const photo = data.photo ? await decode(data.photo).catch(() => null) : null;
+  const colL = photo ? PORTRAIT.x + PORTRAIT.w + 26 : CONTENT.left;
+  const colX = (colL + CONTENT.right) / 2;
+  const colW = CONTENT.right - colL;
+  if (photo) {
+    drawPortrait(ctx, photo.source, photo.width, photo.height, S);
+    photo.close();
+    y = PORTRAIT.y + 20;
+  }
+
   // Target
-  label(ctx, t.targetLabel, cx, y, 17, FONT.label);
-  const name = fitBlock(ctx, P.input.name, maxW, 2, 56, 26, (s) => `700 ${s}px ${FONT.body}`);
+  label(ctx, t.targetLabel, colX, y, 17, FONT.label);
+  const name = fitBlock(ctx, P.input.name, colW, 2, photo ? 50 : 56, 26, (s) => `700 ${s}px ${FONT.body}`);
   ctx.font = `700 ${name.size}px ${FONT.body}`;
   y += name.size * 0.95 + 6;
   for (const ln of name.lines) {
-    inkText(ctx, ln, cx, y, INK);
+    inkText(ctx, ln, colX, y, INK);
     y += name.size * 1.02;
+  }
+  // Date of birth, written plainly under the name
+  if (P.input.birthday) {
+    ctx.font = `italic 500 22px ${FONT.body}`;
+    inkText(ctx, `${t.bornLabel}: ${formatBirth(P.input.birthday, lang)}`, colX, y + 4, INK_SOFT);
+    y += 30;
   }
   y += 18;
 
   // Reason
-  label(ctx, t.reasonFieldLabel, cx, y, 17, FONT.label);
-  const reason = fitBlock(ctx, P.input.reason, maxW - 30, 4, 30, 17, (s) => `italic 500 ${s}px ${FONT.body}`);
+  label(ctx, t.reasonFieldLabel, colX, y, 17, FONT.label);
+  const reason = fitBlock(ctx, P.input.reason, colW - 30, 4, 30, 17, (s) => `italic 500 ${s}px ${FONT.body}`);
   ctx.font = `italic 500 ${reason.size}px ${FONT.body}`;
   y += reason.size * 1.05 + 4;
   for (const ln of reason.lines) {
-    inkText(ctx, ln, cx, y, INK_SOFT);
+    inkText(ctx, ln, colX, y, INK_SOFT);
     y += reason.size * 1.18;
   }
   y += 22;
+  if (photo) y = Math.max(y, PORTRAIT.y + PORTRAIT.h + 34);
 
   // Punishment — the loudest thing on the page
   const pBottom = 858;
@@ -452,6 +482,12 @@ export async function renderCertificateLayers(data: CertificateData, scale = 1.5
   const al = fitFont(ctx, t.archiveLine, maxW, 21, 14, (s) => `italic 600 ${s}px ${FONT.body}`);
   ctx.font = `italic 600 ${al}px ${FONT.body}`;
   inkText(ctx, t.archiveLine, cx, 962, '#6b1410');
+
+  // The birthday adds its own small seal and a signature in the infernal script
+  if (P.input.birthday) {
+    birthSeal(ctx, P.input.birthday, S);
+    infernalSignature(ctx, P.input.birthday);
+  }
 
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   const base = canvas;
@@ -516,6 +552,141 @@ export async function renderCertificateLayers(data: CertificateData, scale = 1.5
     sealRect: [seal.px / W, 1 - (seal.py + seal.size) / H, seal.size / W, seal.size / H],
     engrave: engravePoints(seal.mask),
   };
+}
+
+/** The picture in an oval cameo: toned like an old print, soaked into the paper, framed. */
+function drawPortrait(ctx: CanvasRenderingContext2D, src: CanvasImageSource, iw: number, ih: number, S: number) {
+  const { x, y, w, h } = PORTRAIT;
+  const c = document.createElement('canvas');
+  c.width = Math.round(w * S);
+  c.height = Math.round(h * S);
+  const g = c.getContext('2d')!;
+  // cover-fit, a little above the centre (faces)
+  const k = Math.max(c.width / iw, c.height / ih);
+  const dw = iw * k;
+  const dh = ih * k;
+  g.drawImage(src, (c.width - dw) / 2, (c.height - dh) * 0.35, dw, dh);
+  // sepia tone with a touch of contrast (pixel by pixel: canvas filters are missing in Safari)
+  const id = g.getImageData(0, 0, c.width, c.height);
+  const d = id.data;
+  for (let i = 0; i < d.length; i += 4) {
+    let v = (0.3 * d[i] + 0.59 * d[i + 1] + 0.11 * d[i + 2]) / 255;
+    v = Math.min(1, Math.max(0, (v - 0.5) * 1.15 + 0.52));
+    d[i] = 255 * Math.min(1, v * 1.02 + 0.06);
+    d[i + 1] = 255 * Math.min(1, v * 0.86 + 0.04);
+    d[i + 2] = 255 * Math.min(1, v * 0.66 + 0.02);
+  }
+  g.putImageData(id, 0, 0);
+  // burnt, darkening edge
+  const vg = g.createRadialGradient(c.width / 2, c.height / 2, Math.min(c.width, c.height) * 0.3, c.width / 2, c.height / 2, Math.max(c.width, c.height) * 0.62);
+  vg.addColorStop(0, 'rgba(90, 40, 20, 0)');
+  vg.addColorStop(1, 'rgba(70, 25, 10, 0.55)');
+  g.fillStyle = vg;
+  g.fillRect(0, 0, c.width, c.height);
+  // oval cut
+  g.globalCompositeOperation = 'destination-in';
+  g.fillStyle = '#000';
+  g.beginPath();
+  g.ellipse(c.width / 2, c.height / 2, c.width / 2 - 1, c.height / 2 - 1, 0, 0, Math.PI * 2);
+  g.fill();
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'multiply';
+  ctx.globalAlpha = 0.92;
+  ctx.drawImage(c, x, y, w, h);
+  ctx.restore();
+  // frame: two ink ovals and small diamonds at the ends
+  ctx.save();
+  ctx.strokeStyle = '#5c0a0a';
+  ctx.lineWidth = 2.2;
+  ctx.beginPath();
+  ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(92, 10, 10, 0.55)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.ellipse(x + w / 2, y + h / 2, w / 2 + 7, h / 2 + 7, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fillStyle = CRIMSON;
+  for (const yy of [y - 7, y + h + 7]) {
+    ctx.beginPath();
+    ctx.moveTo(x + w / 2, yy - 7);
+    ctx.lineTo(x + w / 2 + 6, yy);
+    ctx.lineTo(x + w / 2, yy + 7);
+    ctx.lineTo(x + w / 2 - 6, yy);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+/** A small, translucent magic circle grown from the date of birth (its own seed and colour). */
+function birthSeal(ctx: CanvasRenderingContext2D, birthday: string, S: number) {
+  const glyphs = dateToGlyphs(birthday);
+  const design = generateCircle({ seed: hashString(`birth␟${birthday}`), name: glyphs, reason: glyphs, punishment: glyphs });
+  const { x, y, r } = BIRTH_SEAL;
+  const unit = r / 1.45; // leaves room for satellites and blades
+  const c = document.createElement('canvas');
+  c.width = c.height = Math.ceil(r * 2.1 * S);
+  const g = c.getContext('2d')!;
+  g.translate(c.width / 2, c.height / 2);
+  g.scale(unit * S, unit * S);
+  const p = design.palette;
+  const ink = `rgb(${Math.round(p.a[0] * 120)}, ${Math.round(p.a[1] * 120)}, ${Math.round(p.a[2] * 120)})`;
+  g.strokeStyle = g.fillStyle = ink;
+  g.lineCap = 'round';
+  // the fine detail would only turn to mush this small: frame, figure, core and satellites
+  drawFlatCircle(g, { design }, 0.011, true, (l) => /^(frame$|frameText|figure|core|sat|vtx|med|weave|band0)/.test(l.id));
+  ctx.save();
+  ctx.globalCompositeOperation = 'multiply';
+  ctx.globalAlpha = 0.7;
+  ctx.drawImage(c, x - c.width / S / 2, y - c.height / S / 2, c.width / S, c.height / S);
+  ctx.restore();
+}
+
+/** The birthday signed in infernal letters, with a flourish (like the signature on the note). */
+function infernalSignature(ctx: CanvasRenderingContext2D, birthday: string) {
+  const seq = dateToGlyphs(birthday);
+  const letters = seq.filter((gl) => gl >= 0).length;
+  const gaps = seq.length - letters;
+  const adv = Math.min(26, SIGNATURE.w / (letters + gaps * 0.6));
+  const width = adv * (letters + gaps * 0.6);
+  ctx.save();
+  ctx.translate(SIGNATURE.x - width / 2, SIGNATURE.y);
+  ctx.rotate(-0.07);
+  ctx.fillStyle = 'rgba(120, 8, 6, 0.85)';
+  let x = 0;
+  for (const gl of seq) {
+    if (gl < 0) {
+      x += adv * 0.6;
+      continue;
+    }
+    ctx.save();
+    ctx.translate(x + adv / 2, 0);
+    drawGlyph(ctx, gl, adv * 2);
+    ctx.restore();
+    x += adv;
+  }
+  ctx.strokeStyle = 'rgba(120, 8, 6, 0.7)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-14, adv * 1.15);
+  ctx.bezierCurveTo(width * 0.3, adv * 1.6, width * 0.7, adv * 0.6, width + 12, adv * 1.25);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** A date of birth without time; Armenian is spelled out by hand (see formatDate). */
+function formatBirth(iso: string, lang: Lang): string {
+  const [yy, mm, dd] = iso.split('-').map(Number);
+  if (!yy || !mm || !dd) return iso;
+  const date = new Date(yy, mm - 1, dd);
+  if (lang === 'hy') return `${yy} թ. ${HY_MONTHS[mm - 1]} ${dd}`;
+  try {
+    return new Intl.DateTimeFormat(DATE_LOCALE[lang], { dateStyle: 'long' }).format(date);
+  } catch {
+    return date.toLocaleDateString();
+  }
 }
 
 const HY_MONTHS = [

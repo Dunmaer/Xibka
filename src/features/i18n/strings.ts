@@ -55,6 +55,14 @@ const en = {
   noWebgl: 'Your browser cannot show the 3D magic, so the ritual runs in a simplified form.',
   donateButton: 'Donate',
   donateLine: 'Enjoyed the ritual? Feed the altar',
+  birthdayLabel: 'Date of birth',
+  pictureLabel: 'Picture',
+  optionalHint: 'Both optional. The picture never leaves your device.',
+  pictureAdd: 'Add a picture',
+  pictureChange: 'Change',
+  pictureRemove: 'Remove the picture',
+  pictureHint: 'Stays on your device',
+  bornLabel: 'Born',
 };
 
 export type StringKey = keyof typeof en;
@@ -105,6 +113,14 @@ const ru: Dict = {
   noWebgl: 'Браузер не умеет показывать 3D-магию, поэтому ритуал идёт в упрощённом виде.',
   donateButton: 'Поддержать',
   donateLine: 'Понравился ритуал? Покорми алтарь',
+  birthdayLabel: 'Дата рождения',
+  pictureLabel: 'Картинка',
+  optionalHint: 'Оба поля необязательные. Картинка никуда не отправляется.',
+  pictureAdd: 'Добавить картинку',
+  pictureChange: 'Заменить',
+  pictureRemove: 'Убрать картинку',
+  pictureHint: 'Остаётся на вашем устройстве',
+  bornLabel: 'Дата рождения',
 };
 
 const hy: Dict = {
@@ -152,6 +168,14 @@ const hy: Dict = {
   noWebgl: 'Ձեր զննարկիչը չի կարող ցույց տալ 3D մոգությունը, ուստի ծեսն ընթանում է պարզեցված տեսքով։',
   donateButton: 'Աջակցել',
   donateLine: 'Հավանեցի՞ք ծեսը։ Կերակրեք զոհասեղանը',
+  birthdayLabel: 'Ծննդյան ամսաթիվ',
+  pictureLabel: 'Նկար',
+  optionalHint: 'Երկուսն էլ՝ ըստ ցանկության։ Նկարը ոչ մի տեղ չի ուղարկվում։',
+  pictureAdd: 'Ավելացնել նկար',
+  pictureChange: 'Փոխել',
+  pictureRemove: 'Հեռացնել նկարը',
+  pictureHint: 'Մնում է ձեր սարքում',
+  bornLabel: 'Ծնվել է',
 };
 
 export const STRINGS: Record<Lang, Dict> = { en, ru, hy };

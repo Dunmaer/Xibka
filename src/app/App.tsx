@@ -31,6 +31,8 @@ interface Current {
   input: CurseInput;
   lang: Lang;
   createdAt: number;
+  /** Optional picture of the target (only on this device). */
+  photo?: Blob | null;
 }
 
 const SOUND_KEY = 'proklinatel.sound';
@@ -135,7 +137,7 @@ export function App() {
       return null;
     });
     certLayersRef.current = null;
-    const job = renderCertificateLayers({ params: cur.params, lang: cur.lang, createdAt: cur.createdAt }).then(async (layers) => {
+    const job = renderCertificateLayers({ params: cur.params, lang: cur.lang, createdAt: cur.createdAt, photo: cur.photo }).then(async (layers) => {
       if (currentRef.current !== cur) return layers.final;
       certLayersRef.current = layers;
       // the 3D view shows the sheet itself (engraving, shimmer); hand it over once the scene is ready
@@ -153,6 +155,7 @@ export function App() {
           lang: cur.lang,
           createdAt: cur.createdAt,
           thumb,
+          photo: cur.photo ?? undefined,
         }).catch(() => {});
         refreshArchive();
       }
@@ -209,14 +212,14 @@ export function App() {
   );
 
   const onSubmit = useCallback(
-    (input: CurseInput) => {
+    (input: CurseInput, photo: Blob | null = null) => {
       // Inside the click: allow sound for the ritual video (and the synthesised sounds) later on.
       deck.setSound(videoSound(sound));
       deck.unlock();
       audio.unlock();
       audio.setEnabled(sound);
       tilt.request();
-      const cur: Current = { params: makeRitualParams(input), input, lang, createdAt: Date.now() };
+      const cur: Current = { params: makeRitualParams(input), input, lang, createdAt: Date.now(), photo };
       track('ritual-start', `Ritual started (${lang})`);
       void runRitual(cur, { save: true });
     },
@@ -272,7 +275,7 @@ export function App() {
   const openRecord = useCallback(async (r: CurseRecord) => {
     setViewer(r);
     setViewerUrl(null);
-    const canvas = await renderCertificate({ params: makeRitualParams(r.input), lang: r.lang, createdAt: r.createdAt });
+    const canvas = await renderCertificate({ params: makeRitualParams(r.input), lang: r.lang, createdAt: r.createdAt, photo: r.photo });
     const blob = await canvasToBlob(canvas);
     setViewerUrl(URL.createObjectURL(blob));
   }, []);
@@ -301,7 +304,7 @@ export function App() {
     deck.unlock();
     audio.unlock();
     audio.setEnabled(sound);
-    void runRitual({ params: makeRitualParams(r.input), input: r.input, lang: r.lang, createdAt: r.createdAt }, { save: false });
+    void runRitual({ params: makeRitualParams(r.input), input: r.input, lang: r.lang, createdAt: r.createdAt, photo: r.photo }, { save: false });
   }, [viewer, closeViewer, deck, audio, sound, runRitual]);
 
   const removeRecord = useCallback(

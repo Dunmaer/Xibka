@@ -1,9 +1,12 @@
-import { useId, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useI18n } from '../i18n/i18n';
 import type { CurseInput } from '../../utils/seed/seed';
+import { preparePhoto } from '../../utils/photo';
+import { IconImage } from '../../components/Icons';
 
 interface Props {
-  onSubmit: (input: CurseInput) => void;
+  /** `photo`: the optional picture, already shrunk to a JPEG. */
+  onSubmit: (input: CurseInput, photo: Blob | null) => void;
   loading: number; // 0..1, 1 = altar ready
   busy: boolean;
   initial?: CurseInput;
@@ -17,6 +20,30 @@ export function RitualForm({ onSubmit, loading, busy, initial }: Props) {
   const [name, setName] = useState(initial?.name ?? '');
   const [reason, setReason] = useState(initial?.reason ?? '');
   const [punishment, setPunishment] = useState(initial?.punishment ?? '');
+  const [birthday, setBirthday] = useState(initial?.birthday ?? '');
+  const [photo, setPhoto] = useState<Blob | null>(null);
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  useEffect(() => () => {
+    if (photoUrl) URL.revokeObjectURL(photoUrl);
+  }, [photoUrl]);
+  const today = new Date().toISOString().slice(0, 10);
+
+  const pickPhoto = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const blob = await preparePhoto(file);
+      setPhoto(blob);
+      setPhotoUrl(URL.createObjectURL(blob));
+    } catch {
+      // not an image the browser can read: keep what was there
+    }
+  };
+  const dropPhoto = () => {
+    setPhoto(null);
+    setPhotoUrl(null);
+  };
   const [touched, setTouched] = useState(false);
   const refs = {
     name: useRef<HTMLInputElement>(null),
@@ -40,7 +67,10 @@ export function RitualForm({ onSubmit, loading, busy, initial }: Props) {
       return;
     }
     if (busy) return;
-    onSubmit({ name: name.trim(), reason: reason.trim(), punishment: punishment.trim() });
+    onSubmit(
+      { name: name.trim(), reason: reason.trim(), punishment: punishment.trim(), ...(birthday ? { birthday } : {}) },
+      photo,
+    );
   };
 
   const err = (k: keyof typeof errors) =>
@@ -110,6 +140,40 @@ export function RitualForm({ onSubmit, loading, busy, initial }: Props) {
         />
         {err('punishment')}
       </div>
+
+      <div className="field-row">
+        <div className="field">
+          <label htmlFor={`${id}-birth`}>
+            {t.birthdayLabel}
+          </label>
+          <input
+            id={`${id}-birth`}
+            type="date"
+            value={birthday}
+            min="1900-01-01"
+            max={today}
+            onChange={(e) => setBirthday(e.target.value)}
+          />
+        </div>
+        <div className="field">
+          <span className="field__label" id={`${id}-pic`}>
+            {t.pictureLabel}
+          </span>
+          <div className="photo-pick">
+            <label className="photo-pick__btn" title={t.pictureHint} aria-describedby={`${id}-pic`}>
+              {photoUrl ? <img src={photoUrl} alt="" className="photo-pick__thumb" /> : <IconImage />}
+              <span className="photo-pick__text">{photoUrl ? t.pictureChange : t.pictureAdd}</span>
+              <input type="file" accept="image/*" style={{ display: 'none' }} onChange={pickPhoto} />
+            </label>
+            {photoUrl && (
+              <button type="button" className="photo-pick__remove" aria-label={t.pictureRemove} title={t.pictureRemove} onClick={dropPhoto}>
+                ×
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+      <p className="field-row__hint">{t.optionalHint}</p>
 
       <button className="btn btn--primary ritual-form__submit" type="submit" disabled={busy} aria-busy={!ready || busy}>
         <span className="btn__glow" aria-hidden="true" />

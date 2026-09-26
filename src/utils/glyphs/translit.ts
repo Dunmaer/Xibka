@@ -42,3 +42,21 @@ export function toGlyphs(text: string): number[] {
   while (out.length && out[out.length - 1] === -1) out.pop();
   return out;
 }
+
+/**
+ * A date in infernal letters, the way old scripts wrote numbers with letters:
+ * 1 а, 2 в, 3 г, 4 д, 5 е, 6 ж, 7 з, 8 и, 9 й, 0 о. Day, month and year are separated by gaps.
+ */
+export function dateToGlyphs(iso: string): number[] {
+  const DIGIT = 'овгдежзий'.split('');
+  const map = (d: string) => INFERNAL_ALPHABET.indexOf(d === '1' ? 'а' : DIGIT[Number(d)]);
+  const [y, m, d] = iso.split('-');
+  const out: number[] = [];
+  for (const part of [d, m, y]) {
+    if (!part) continue;
+    if (out.length) out.push(-1);
+    for (const ch of part) if (/\d/.test(ch)) out.push(map(ch));
+  }
+  return out;
+}
+
