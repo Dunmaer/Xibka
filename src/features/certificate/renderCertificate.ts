@@ -1,6 +1,7 @@
 // Draws the finished certificate on a canvas (same canvas is shown on screen and exported as PNG).
 import certificateUrl from '../../assets/certificate.webp';
 import sealMaskUrl from '../../assets/seal-mask.png';
+import portraitFrameUrl from '../../assets/portrait-frame.png';
 import { loadImage } from '../../utils/image';
 import { DATE_LOCALE, STRINGS, type Lang } from '../i18n/strings';
 import type { RitualParams } from '../ritual/params';
@@ -28,8 +29,12 @@ export interface CertificateData {
   photo?: Blob | null;
 }
 
-/** The portrait (left of the target's name) when a picture was added; its top is computed. */
-const PORTRAIT = { x: 172, w: 176, h: 222 };
+/**
+ * The portrait (left of the target's name) when a picture was added, in the oval frame
+ * portrait-frame.png (512 x 683); its top is computed. `hole` is the opening of the frame as
+ * fractions of its size (centre and half axes), measured on the image.
+ */
+const PORTRAIT = { x: 156, w: 228, h: 304, hole: { cx: 0.499, cy: 0.487, rx: 0.335, ry: 0.311 } };
 /** Right of the wax seal: the signature, over the small birth stamp. */
 const SIGNATURE = { x: 704, y: 1076 };
 const BIRTH_STAMP = { x: 728, y: 1098, r: 58 };
@@ -163,11 +168,11 @@ function inkText(ctx: CanvasRenderingContext2D, text: string, x: number, y: numb
 }
 
 /** Letter-spaced small caps label. */
-function label(ctx: CanvasRenderingContext2D, text: string, cx: number, y: number, size: number, font: string) {
+function label(ctx: CanvasRenderingContext2D, text: string, cx: number, y: number, size: number, font: string, align: CanvasTextAlign = 'center') {
   ctx.save();
   ctx.font = `600 ${size}px ${font}`;
   ctx.fillStyle = LABEL;
-  ctx.textAlign = 'center';
+  ctx.textAlign = align;
   ctx.textBaseline = 'alphabetic';
   const spaced = text.toUpperCase().split('').join(' ');
   ctx.fillText(spaced, cx, y);
@@ -417,55 +422,88 @@ export async function renderCertificateLayers(data: CertificateData, scale = 1.5
   ctx.font = `italic 500 ${introSize}px ${FONT.body}`;
   inkText(ctx, t.certificateIntro, cx, 340, INK_SOFT);
 
-  let y = 392;
-  // With a picture, the target and the reason stand in a column right of it, and the two are
-  // centred together between the intro line and the punishment.
+  // The target, the reason and the punishment are centred together between the intro line and
+  // the date row. With a picture, the portrait stands on the left and the target and the reason
+  // run beside it, aligned left; the punishment follows below across the sheet.
+  const areaTop = 362;
+  const areaBottom = 884;
   const photo = data.photo ? await decode(data.photo).catch(() => null) : null;
-  const colL = photo ? PORTRAIT.x + PORTRAIT.w + 26 : CONTENT.left;
-  const colX = (colL + CONTENT.right) / 2;
-  const colW = CONTENT.right - colL;
-  const nameFit = fitBlock(ctx, P.input.name, colW, 2, photo ? 50 : 56, 26, (s) => `700 ${s}px ${FONT.body}`);
-  const reasonFit = fitBlock(ctx, P.input.reason, colW - 30, 4, 30, 17, (s) => `italic 500 ${s}px ${FONT.body}`);
+  const frameImg = photo ? await loadImage(portraitFrameUrl).catch(() => null) : null;
+  const colL = photo ? PORTRAIT.x + PORTRAIT.w + 24 : CONTENT.left;
+  const colX = photo ? colL : (colL + CONTENT.right) / 2;
+  const colW = CONTENT.right - colL - (photo ? 8 : 0);
+  const nameFit = fitBlock(ctx, P.input.name, colW, 2, photo ? 52 : 56, 26, (s) => `700 ${s}px ${FONT.body}`);
+  const reasonFit = fitBlock(ctx, P.input.reason, colW - (photo ? 0 : 30), 4, 30, 17, (s) => `italic 500 ${s}px ${FONT.body}`);
   /** Target + reason, from the first label's baseline; `draw = false` only measures. */
   const column = (y0: number, draw: boolean) => {
+    const align: CanvasTextAlign = photo ? 'left' : 'center';
+    ctx.save();
+    ctx.textAlign = align;
     let yy = y0;
-    if (draw) label(ctx, t.targetLabel, colX, yy, 17, FONT.label);
+    if (draw) label(ctx, t.targetLabel, colX, yy, 17, FONT.label, align);
     ctx.font = `700 ${nameFit.size}px ${FONT.body}`;
     yy += nameFit.size * 0.95 + 6;
     for (const ln of nameFit.lines) {
       if (draw) inkText(ctx, ln, colX, yy, INK);
       yy += nameFit.size * 1.02;
     }
-    yy += 18;
-    if (draw) label(ctx, t.reasonFieldLabel, colX, yy, 17, FONT.label);
+    if (photo) {
+      // a short rule with a diamond between the name and the reason
+      yy += 4;
+      if (draw) {
+        ctx.save();
+        const g = ctx.createLinearGradient(colX, 0, colX + 250, 0);
+        g.addColorStop(0, CRIMSON);
+        g.addColorStop(1, 'rgba(125,12,12,0)');
+        ctx.strokeStyle = g;
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.moveTo(colX, yy);
+        ctx.lineTo(colX + 250, yy);
+        ctx.stroke();
+        ctx.fillStyle = CRIMSON;
+        ctx.beginPath();
+        ctx.moveTo(colX + 120, yy - 6);
+        ctx.lineTo(colX + 126, yy);
+        ctx.lineTo(colX + 120, yy + 6);
+        ctx.lineTo(colX + 114, yy);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+      yy += 34;
+    } else yy += 18;
+    if (draw) label(ctx, t.reasonFieldLabel, colX, yy, 17, FONT.label, align);
     ctx.font = `italic 500 ${reasonFit.size}px ${FONT.body}`;
     yy += reasonFit.size * 1.05 + 4;
     reasonFit.lines.forEach((ln, i) => {
       if (draw) inkText(ctx, ln, colX, yy, INK_SOFT);
       if (i < reasonFit.lines.length - 1) yy += reasonFit.size * 1.18;
     });
+    ctx.restore();
     return yy; // baseline of the last line
   };
-  if (photo) {
-    const top = 362; // just under the intro line
-    const colH = column(0, false) + 14 + 8; // + label cap height + descenders
-    const blockH = Math.max(colH, PORTRAIT.h + 18);
-    drawPortrait(ctx, photo.source, photo.width, photo.height, S, top + (blockH - PORTRAIT.h) / 2);
-    photo.close();
-    column(top + (blockH - colH) / 2 + 14, true);
-    y = top + blockH + 34;
-  } else {
-    y = column(y, true) + reasonFit.size * 1.18 + 22;
-  }
-
-  // Punishment — the loudest thing on the page
-  const pBottom = 858;
-  label(ctx, t.punishmentFieldLabel, cx, y, 18, FONT.label);
-  const room = Math.max(60, pBottom - y - 10);
+  const colH = column(0, false) + 14 + 8; // + label cap height + descenders
+  const upperH = photo ? Math.max(colH, PORTRAIT.h) : colH;
+  const gap = photo ? 30 : 34;
+  // the punishment gets the room that is left
+  const punRoom = areaBottom - areaTop - upperH - gap - 26;
   let pun = fitBlock(ctx, P.input.punishment, maxW, 3, 70, 22, (s) => `700 ${s}px ${FONT.body}`);
-  while (pun.size > 22 && pun.lines.length * pun.size * 1.05 > room) {
+  const punH = (f: typeof pun) => 20 + f.size * 0.98 + 6 + (f.lines.length - 1) * f.size * 1.05 + f.size * 0.22;
+  while (pun.size > 22 && punH(pun) > punRoom) {
     pun = fitBlock(ctx, P.input.punishment, maxW, 3, pun.size - 2, 22, (s) => `700 ${s}px ${FONT.body}`);
   }
+  const total = upperH + gap + punH(pun);
+  const top = areaTop + Math.max(0, (areaBottom - areaTop - total) / 2);
+  if (photo) {
+    drawPortrait(ctx, photo.source, photo.width, photo.height, S, top + (upperH - PORTRAIT.h) / 2, frameImg);
+    photo.close();
+    column(top + (upperH - colH) / 2 + 14, true);
+  } else column(top + 14, true);
+  let y = top + upperH + gap + 18;
+
+  // Punishment — the loudest thing on the page
+  label(ctx, t.punishmentFieldLabel, cx, y, 18, FONT.label);
   ctx.font = `700 ${pun.size}px ${FONT.body}`;
   y += pun.size * 0.98 + 6;
   for (const ln of pun.lines) {
@@ -606,8 +644,13 @@ export async function renderCertificateLayers(data: CertificateData, scale = 1.5
 }
 
 /** The picture in an oval cameo: toned like an old print, soaked into the paper, framed. */
-function drawPortrait(ctx: CanvasRenderingContext2D, src: CanvasImageSource, iw: number, ih: number, S: number, y: number) {
-  const { x, w, h } = PORTRAIT;
+function drawPortrait(ctx: CanvasRenderingContext2D, src: CanvasImageSource, iw: number, ih: number, S: number, fy: number, frame: HTMLImageElement | null) {
+  // the picture fills the opening of the frame (a little under its ring)
+  const hole = PORTRAIT.hole;
+  const w = PORTRAIT.w * hole.rx * 2 * 1.03;
+  const h = PORTRAIT.h * hole.ry * 2 * 1.03;
+  const x = PORTRAIT.x + PORTRAIT.w * hole.cx - w / 2;
+  const y = fy + PORTRAIT.h * hole.cy - h / 2;
   const c = document.createElement('canvas');
   c.width = Math.round(w * S);
   c.height = Math.round(h * S);
@@ -659,29 +702,16 @@ function drawPortrait(ctx: CanvasRenderingContext2D, src: CanvasImageSource, iw:
   ctx.globalAlpha = 0.18;
   ctx.drawImage(c, x, y, w, h);
   ctx.restore();
-  // frame: two ink ovals and small diamonds at the ends
-  ctx.save();
-  ctx.strokeStyle = '#5c0a0a';
-  ctx.lineWidth = 2.2;
-  ctx.beginPath();
-  ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.strokeStyle = 'rgba(92, 10, 10, 0.55)';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.ellipse(x + w / 2, y + h / 2, w / 2 + 7, h / 2 + 7, 0, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.fillStyle = CRIMSON;
-  for (const yy of [y - 7, y + h + 7]) {
+  if (frame) ctx.drawImage(frame, PORTRAIT.x, fy, PORTRAIT.w, PORTRAIT.h);
+  else {
+    ctx.save();
+    ctx.strokeStyle = '#5c0a0a';
+    ctx.lineWidth = 2.2;
     ctx.beginPath();
-    ctx.moveTo(x + w / 2, yy - 7);
-    ctx.lineTo(x + w / 2 + 6, yy);
-    ctx.lineTo(x + w / 2, yy + 7);
-    ctx.lineTo(x + w / 2 - 6, yy);
-    ctx.closePath();
-    ctx.fill();
+    ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
   }
-  ctx.restore();
 }
 
 /**

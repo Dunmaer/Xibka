@@ -4,7 +4,7 @@
 // decides how many tiers there are, where they sit, what architecture the main figure has
 // (star, triangle, rounded heptagon, compound polygons, letters running along its edges, a square
 // seal, Metatron's cube, the flower of life, a cube ...), whether big off-centre circles, an axis
-// or a trail of beads break the symmetry, whether satellites break out of the frame (alone or
+// break the symmetry, whether satellites break out of the frame (alone or
 // linked into a constellation), blades radiate outward, medallions sit on the cardinal points,
 // and what the ornament of every band is made of. Motifs are assembled from primitives with
 // continuous random parameters, so no two circles repeat.
@@ -15,7 +15,6 @@ import { makeRng } from '../../../utils/seed/seed';
 import { drawGlyph } from '../../../utils/glyphs/glyphLibrary';
 import { drawSigil, makeSigil, type Sigil } from './sigils';
 import { layerPalette, makePalette, type Palette } from './palette';
-import { growAddition, pickAddition } from './additions';
 import {
   TAU, around, arc, circle, crescent, curvedPoly, dashLine, dashedCircle, disc, dot, glyphLine, glyphRing, knockoutRing,
   line, lotus, miniCircle, motifBand, node, polar, polygonPts, sigilRing, starPoly, strokePoly, sunRays,
@@ -158,7 +157,7 @@ export function generateCircle(g: GeneratorInput): CircleDesign {
     const textStyle = tr < 0.42 ? 'ring' : tr < 0.7 ? 'big' : tr < 0.85 ? 'sigils' : 'knockout';
     const bandH = textStyle === 'sigils' ? fr.range(0.1, 0.14) : fr.range(0.06, 0.13);
     const blades = fr.chance(0.35);
-    const ticks = fr.chance(0.4);
+    fr(); // (the draw that decided the groups of ticks, now gone: keeps the rest unchanged)
     const arcs = fr.chance(0.55);
     const r1 = 0.965;
     const r0 = r1 - bandH;
@@ -198,7 +197,7 @@ export function generateCircle(g: GeneratorInput): CircleDesign {
         }
       } else glyphRing(p, (r0 + r1) / 2, bandH, text(g.name, g.reason), { sep: r.pick(['dot', 'diamond', 'bar'] as const) });
     }, {}, 0.93);
-    if (blades || ticks || arcs) {
+    if (blades || arcs) {
       const reach = blades ? 1.5 : 1.22;
       const de = fresh(14);
       addLayer('frameOuter', reach, 0.85, (p) => {
@@ -221,19 +220,6 @@ export function generateCircle(g: GeneratorInput): CircleDesign {
             line(p, -0.035, -0.02, 0.035, -0.02, 1, 0.9);
             dot(p, 0, 0.012, 0.008, 1);
           }, r.range(0, TAU));
-        }
-        if (ticks) {
-          p.ink('a');
-          const groups = r.pick([4, 6, 8, 12]);
-          for (let gi = 0; gi < groups; gi++) {
-            const base = (gi / groups) * TAU;
-            for (let k = -3; k <= 3; k++) {
-              const t = base + k * 0.018;
-              const [x1, y1] = polar(1.09, t);
-              const [x2, y2] = polar(k === 0 ? 1.18 : 1.13, t);
-              line(p, x1, y1, x2, y2, 0.8, 0.8);
-            }
-          }
         }
         if (arcs) {
           p.ink('c');
@@ -1011,53 +997,7 @@ export function generateCircle(g: GeneratorInput): CircleDesign {
     }, { spin: ar.range(0.015, 0.05) * ar.sign() });
   }
 
-  // ---------- 7c. A trail of shrinking beads outside the frame (on one side only)
-  if (rng.chance(0.35)) {
-    const tr = rng.fork(81);
-    const count = tr.int(4, 7);
-    const R0 = tr.range(1.07, 1.17);
-    const big = tr.range(0.045, 0.075);
-    const shrink = tr.range(0.72, 0.86);
-    const sizes = Array.from({ length: count }, (_, i) => big * Math.pow(shrink, i));
-    const gap = tr.range(1.15, 1.6);
-    const ang = [0];
-    for (let i = 1; i < count; i++) ang.push(ang[i - 1] + ((sizes[i - 1] + sizes[i]) * gap) / R0);
-    const mid = ang[count - 1] / 2;
-    const a0 = tr.range(0, TAU);
-    const extent = R0 * Math.sin(mid) + big + 0.03;
-    const dt = fresh(82);
-    // placed on its own orbit: local +x runs along the orbit, +y points to the centre
-    addLayer('trail', extent, 0.85, (p) => {
-      const r = dt();
-      const seq = g.punishment.filter((x) => x >= 0);
-      p.ink('a');
-      p.ctx.globalAlpha = 0.7;
-      p.ctx.lineWidth = p.lw * 0.7;
-      p.ctx.beginPath();
-      p.ctx.arc(0, R0, R0, -Math.PI / 2 - mid - 0.04, -Math.PI / 2 + mid + 0.04);
-      p.ctx.stroke();
-      const inside = r.pick(['glyph', 'mixed', 'dot'] as const);
-      sizes.forEach((s, i) => {
-        const psi = ang[i] - mid - Math.PI / 2;
-        p.ctx.save();
-        p.ctx.translate(R0 * Math.cos(psi), R0 + R0 * Math.sin(psi));
-        p.ctx.rotate(psi + Math.PI / 2);
-        disc(p, s);
-        p.ink('c');
-        circle(p, s, 1.1, 1);
-        p.ctx.globalAlpha = 1;
-        const what = inside === 'mixed' ? (i % 3 === 0 ? 'sigil' : i % 3 === 1 ? 'glyph' : 'dot') : inside;
-        if (what === 'glyph') {
-          p.ink('b');
-          drawGlyph(p.ctx, seq.length ? seq[i % seq.length] : i, s * 1.25);
-        } else if (what === 'sigil') {
-          p.ink('a');
-          drawSigil(p.ctx, sigils[(i + 3) % sigils.length], s * 0.7, 1);
-        } else dot(p, 0, 0, s * 0.35, 1);
-        p.ctx.restore();
-      });
-    }, { orbit: { r: R0, a: a0 + mid, group: 4, groupSpin: tr.range(0.03, 0.08) * tr.sign() }, spin: 0 });
-  }
+  rng(); // (the draw that decided the trail of beads, now gone: keeps the rest unchanged)
 
   // ---------- 8. Faint giant geometry behind everything (big triangles / lines)
   if (rng.chance(0.55)) {
@@ -1075,19 +1015,6 @@ export function generateCircle(g: GeneratorInput): CircleDesign {
     }, { zSlot: -0.6 });
   }
 
-  // ---------- Additions: sometimes wings or a spiral grow out of the circle to the sides
-  const addition = pickAddition(rng.fork(7));
-  if (addition) {
-    let salt = 0;
-    growAddition(addition, rng.fork(8), {
-      g,
-      words,
-      sigils,
-      dir,
-      add: (id, radius, intensity, draw, opt = {}) =>
-        addLayer(`${id}_${salt++}`, radius, intensity, draw, { at: opt.at, spin: opt.spin ?? 0 }),
-    });
-  }
 
 
   // ---------- 9. Hanging inscriptions: rings framing the certificate at the end
@@ -1149,5 +1076,5 @@ export function generateCircle(g: GeneratorInput): CircleDesign {
     });
   }
 
-  return { palette, layers, passers, sigils, architecture: `${arch}/${figure}${addition ? `+${addition}` : ''}/${palette.name}` };
+  return { palette, layers, passers, sigils, architecture: `${arch}/${figure}/${palette.name}` };
 }

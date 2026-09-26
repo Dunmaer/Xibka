@@ -40,9 +40,30 @@ const samples: Record<Lang, { name: string; reason: string; punishment: string }
       hy: { name: 'Արամ', reason: 'ուշացավ հանդիպումից', punishment: 'անվերջ զկռտոց' },
     };
 
+/** ?photo: a drawn stand-in picture (a face-like shape on a warm ground). */
+async function samplePhoto(): Promise<Blob | null> {
+  if (!new URLSearchParams(location.search).has('photo')) return null;
+  const c = document.createElement('canvas');
+  c.width = 480;
+  c.height = 600;
+  const g = c.getContext('2d')!;
+  const bg = g.createLinearGradient(0, 0, 0, 600);
+  bg.addColorStop(0, '#6d7f99');
+  bg.addColorStop(1, '#2b2f3a');
+  g.fillStyle = bg;
+  g.fillRect(0, 0, 480, 600);
+  g.fillStyle = '#d9a383';
+  g.beginPath();
+  g.ellipse(240, 250, 105, 135, 0, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = '#3a2a22';
+  g.fillRect(90, 430, 300, 170);
+  return new Promise((res) => c.toBlob((b) => res(b), 'image/jpeg', 0.9));
+}
+
 const row = document.getElementById('row')!;
 for (const lang of ['en', 'ru', 'hy'] as Lang[]) {
-  const canvas = await renderCertificate({ params: makeRitualParams(samples[lang]), lang, createdAt: Date.now() });
+  const canvas = await renderCertificate({ params: makeRitualParams(samples[lang]), lang, createdAt: Date.now(), photo: await samplePhoto() });
   const img = new Image();
   img.src = canvas.toDataURL('image/png');
   row.appendChild(img);
