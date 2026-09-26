@@ -47,7 +47,9 @@ const LABEL = '#8b1a12';
  * and the heavy fallback weight made those lines hard to read.
  */
 function smallFont(lang: Lang, weight: number, size: number, italic = false) {
-  if (lang === 'hy') return `${Math.max(400, weight - 200)} ${size}px "Noto Serif Armenian", "Cormorant Garamond", serif`;
+  // (Noto's Armenian letters stand much taller than Cormorant's: scaled down to about the
+  // height of the "№" next to them)
+  if (lang === 'hy') return `${Math.max(400, weight - 200)} ${Math.round(size * 0.8)}px "Noto Serif Armenian", "Cormorant Garamond", serif`;
   return `${italic ? 'italic ' : ''}${weight} ${size}px ${FONT.body}`;
 }
 
